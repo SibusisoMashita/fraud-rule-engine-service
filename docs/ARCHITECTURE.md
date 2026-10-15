@@ -1,6 +1,6 @@
 # Architecture
 
-Target design for v1. Related specifications: [scope](../README.md), [HTTP contract](../api/openapi.yaml), [fraud rules](RULES.md) and [acceptance criteria](TESTING.md).
+Target design for v1. The runtime foundation is implemented; fraud processing, protected ingress and policy binding remain planned. Current runtime commands and limitations are in [Operations](OPERATIONS.md). Related specifications: [scope](../README.md), [HTTP contract](../api/openapi.yaml), [fraud rules](RULES.md) and [acceptance criteria](TESTING.md).
 
 ## 1. One application with explicit boundaries
 
@@ -62,7 +62,7 @@ Timeout/disconnect/5xx may occur after commit. An ambiguous result is UNKNOWN; r
 
 Flyway executes once per release with migration identity; application readiness requires compatible schema, valid expected policy and dependencies. Traffic readiness remains closed until protected smoke checks and release audit pass. Policy changes deliberately drain old ingestion, wait for in-flight work, switch one expected hash, smoke and resume. Code-only rolling releases require tested old/new schema/contract compatibility. Image rollback is allowed only on compatible schema; otherwise reviewed forward fix, never blind destructive down-migration.
 
-The shutdown budget satisfies work deadline < app shutdown grace < container grace. Liveness is independent of shared dependencies. Readiness/routing drains on shutdown; SIGKILL still relies on DB transaction recovery. Observability comprises safe correlation/build/policy records, low-cardinality latency/error/rule/pool/lock/limiter metrics and actionable alerts. Operational commands are outside the current design-stage artifact.
+The shutdown budget satisfies work deadline < app shutdown grace < container grace. Liveness is independent of shared dependencies. Readiness/routing drains on shutdown; SIGKILL still relies on DB transaction recovery. Observability comprises safe correlation/build/policy records, low-cardinality latency/error/rule/pool/lock/limiter metrics and actionable alerts. The foundation lifecycle and implemented probe boundaries are documented in [Operations](OPERATIONS.md).
 
 Restore acceptance covers isolated recovery, row/FK/hash/sequence reconciliation and producer gap reporting. A logical dump restore is not PITR. Replayed missing events may produce different acceptance-time decisions; lost original evaluations cannot be reconstructed exactly. Real-data deployment requires approved RPO/RTO, durable upstream replay, recovery ownership and availability architecture.
 

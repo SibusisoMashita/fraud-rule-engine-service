@@ -1,0 +1,91 @@
+name: fraud-rule-engine-service
+x-app: &app
+  image: fraud-rule-engine-service:local
+  build: .
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  mem_limit: 512m
+  cpus: 1
+  pids_limit: 128
+  environment: &environment
+    DATABASE_URL: jdbc:postgresql://db:5432/fraud?currentSchema=fraud&connectTimeout=1&socketTimeout=2
+    REDIS_HOST: redis
+services:
+  db:
+    image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    environment:
+      POSTGRES_DB: fraud
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/db-admin-password
+    secrets: [db-admin-password, db-migration-password, spring.datasource.password]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/init-database.sh:/docker-entrypoint-initdb.d/01-roles.sh:ro
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128
+    healthcheck:
+      test: [CMD-SHELL, 'PGPASSWORD="$$(cat /run/secrets/db-admin-password)" pg_isready -h 127.0.0.1 -U postgres -d fraud']
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  redis:
+    image: redis:8.2@sha256:47670742d7924adbcdb404d1288b6327815b23141969c0939b8e5d61f78c2634
+    user: redis
+    read_only: true
+    tmpfs: ['/tmp:size=16m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    secrets: [spring.data.redis.password]
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        printf 'user default on >%s +@connection\n' "$$(cat /run/secrets/spring.data.redis.password)" > /tmp/users.acl
+        exec redis-server --aclfile /tmp/users.acl --save '' --appendonly no --maxmemory 64mb --maxmemory-policy noeviction
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$(cat /run/secrets/spring.data.redis.password)" redis-cli ping | grep -qx PONG']
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  migrate:
+    <<: *app
+    environment:
+      <<: *environment
+      SPRING_PROFILES_ACTIVE: migrate
+      DATABASE_URL: jdbc:postgresql://db:5432/fraud?currentSchema=fraud&connectTimeout=1&socketTimeout=35
+    secrets:
+      - source: db-migration-password
+        target: spring.datasource.password
+    depends_on:
+      db: {condition: service_healthy}
+    restart: 'no'
+  app:
+    <<: *app
+    secrets: [spring.datasource.password, spring.data.redis.password]
+    ports: ['127.0.0.1:${APP_PORT:-8080}:8080']
+    stop_grace_period: 45s
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --max-time, '3', http://localhost:8080/health/ready]
+      interval: 5s
+      timeout: 4s
+      start_period: 20s
+      retries: 5
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+secrets:
+  db-admin-password: {file: ./secrets/db-admin-password}
+  db-migration-password: {file: ./secrets/db-migration-password}
+  spring.datasource.password: {file: ./secrets/spring.datasource.password}
+  spring.data.redis.password: {file: ./secrets/spring.data.redis.password}
+volumes:
+  postgres-data:

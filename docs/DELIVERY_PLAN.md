@@ -1,6 +1,6 @@
 # Delivery plan
 
-The design foundation is documented. Application implementation and runtime verification have not started.
+Stages 0 and 1 are complete. The Java/Docker foundation has verified migrations, health probes, dependency recovery and graceful shutdown. The next stage is typed configuration and domain contracts. Fraud evaluation and protected API routes remain unimplemented.
 
 ## Milestones
 

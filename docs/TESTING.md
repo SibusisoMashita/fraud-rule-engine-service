@@ -1,6 +1,14 @@
 # Testing and acceptance
 
-**Status:** test specification. Application, Docker, security, concurrency, load and recovery results are not yet available. Coverage corresponds to the [delivery milestones](DELIVERY_PLAN.md).
+**Status:** runtime foundation tests are implemented. Business/security/concurrency/load and financial recovery acceptance remain pending. Coverage corresponds to the [delivery milestones](DELIVERY_PLAN.md).
+
+## Foundation verification
+
+`./mvnw -B -ntp verify` runs five integration tests against real PostgreSQL and Redis: exact health responses, denied routes/no session cookies, restricted runtime SQL privileges, incompatible schema readiness, and dependency stalls with recovery. Migrations are applied twice to verify the second pass is a no-op. Dependencies are paused during fault tests so their randomly mapped host ports stay stable.
+
+`./scripts/smoke.sh` exercises the actual Compose configuration: first-volume database initialization, the one-shot migration entrypoint, dependency stop/start recovery, persisted schema after restart, graceful shutdown, migration startup gating, Redis authentication/command restrictions and application container restrictions. It uses disposable resources. CI runs both layers; local reports remain generated artifacts under `target/`.
+
+These checks establish the foundation only. They do not establish fraud correctness, authorization scope, limiter behaviour, financial persistence, production capacity or successful backup restoration.
 
 ## Test boundaries
 
@@ -16,7 +24,7 @@ The contracts under test are defined in [Architecture](ARCHITECTURE.md), [Rules]
 
 ## Scenario coverage
 
-SC identifiers connect scenarios to tests and reports. Evidence is pending for every row. The matrix covers identified risks rather than every possible failure.
+SC identifiers connect scenarios to tests and reports. Foundation health/dependency and migration checks provide partial coverage for SC-08, SC-09, SC-10 and SC-13. No scenario below is fully accepted yet. The matrix covers identified risks rather than every possible failure.
 
 | ID | Risk / acceptance invariant | Required evidence |
 | --- | --- | --- |
