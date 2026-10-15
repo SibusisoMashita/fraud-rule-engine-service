@@ -4,6 +4,8 @@ api:
   maxRegisteredRules: 64
   maxEvidenceFactsPerRule: 16
   maxBodyBytes: 16384
+  maxLocationCandidatesPerEvaluation: 2000
+  documentationEnabled: true
   maxJsonDepth: 8
   maxJsonNumberLength: 32
   maxIdentifierLength: 128

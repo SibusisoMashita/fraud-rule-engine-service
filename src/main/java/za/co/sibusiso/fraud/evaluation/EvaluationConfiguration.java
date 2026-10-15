@@ -11,5 +11,8 @@ public class EvaluationConfiguration {
     @Bean HighAmountRule highAmountRule() { return new HighAmountRule(); }
     @Bean TransactionVelocityRule transactionVelocityRule() { return new TransactionVelocityRule(); }
     @Bean CumulativeSpendRule cumulativeSpendRule() { return new CumulativeSpendRule(); }
+    @Bean ImpossibleTravelRule impossibleTravelRule(za.co.sibusiso.fraud.configuration.ServiceLimits limits) {
+        return new ImpossibleTravelRule(limits.api().maxLocationCandidatesPerEvaluation());
+    }
     @Bean RuleEngine ruleEngine(List<FraudRule<?>> implementations, za.co.sibusiso.fraud.configuration.ServiceLimits limits) { return new RuleEngine(implementations, limits.api().maxEvidenceFactsPerRule()); }
 }

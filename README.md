@@ -2,13 +2,13 @@
 
 A Java backend for evaluating categorized transaction events, storing explainable fraud flags, and retrieving results through an API.
 
-**Status:** the transactional flow and first three rules are implemented: authenticated `POST /api/v1/transactions` evaluates high amount, transaction velocity and cumulative spend and commits the event, evaluation and complete rule-result set together. Identical retries return the original result; `GET /api/v1/transactions/{eventId}` retrieves it within the caller's scope. Impossible travel, the small-payment sequence and list/policy-query endpoints remain planned.
+**Status:** the transactional flow and first four rules are implemented: authenticated `POST /api/v1/transactions` evaluates high amount, transaction velocity, cumulative spend and impossible travel and commits the event, evaluation and complete rule-result set together. Identical retries return the original result; `GET /api/v1/transactions/{eventId}` retrieves it within the caller's scope. The small-payment sequence and list/policy-query endpoints remain planned.
 
 ## Scope
 
 V1 accepts immutable **BOOKED outgoing card purchases and ATM withdrawals** from authenticated producers. It flags potential fraud; it does not authorize payments, establish fraud, calculate balances, or process refunds/reversals. Producers supply a stable event identity, opaque customer/instrument identifiers and trustworthy physical-location evidence when available. The demonstration dataset is synthetic.
 
-The design defines five rules: high amount, velocity and cumulative spend are implemented and enabled in the sample policy. Impossible travel and the small-payment sequence remain disabled until their milestones. All thresholds, currencies, eligibility windows and enabled states come from the active database policy. Enabling an unavailable implementation is rejected.
+The design defines five rules: high amount, velocity, cumulative spend and impossible travel are implemented and enabled in the sample policy. The small-payment sequence remains disabled until its milestone. All thresholds, currencies, eligibility windows and enabled states come from the active database policy. Enabling an unavailable implementation is rejected.
 
 ## Stack
 
@@ -53,6 +53,12 @@ printf 'header = "X-API-Key: %s"\n' "$(cat secrets/local-api-key)" |
 
 The seeded identity has the ingest/read/policy roles in the `local-demo` scope, with a default 30-day validity configured by `LOCAL_KEY_VALIDITY_DAYS` on initial seeding. List-evaluation and rule-inspection routes currently return `503 FEATURE_UNAVAILABLE`; missing/invalid credentials return 401, disallowed roles/sources return 403 and exhausted quotas return 429. [Operations](docs/OPERATIONS.md) covers identity changes, rotation and the implemented bounds.
 
+## Swagger UI
+
+Open [Swagger UI](http://localhost:8080/swagger-ui/index.html) after startup. It serves the maintained [OpenAPI contract](api/openapi.yaml) from the application with pinned local assets. Use **Authorize** and the generated local key for protected requests; authorization is not persisted across page reloads. The UI has no remote validator. API permissions and quotas apply to requests made from Swagger too. Endpoints marked as planned still return 503.
+
+`api.documentationEnabled` enables public GET access to the UI and `/openapi.yaml` in the local sample. Set it to false in startup configuration and restart to disable these routes; externally exposed deployments should choose documentation access deliberately.
+
 ## Evaluate and retrieve
 
 This synthetic example saves its immutable payload for replay. With the initial sample policy, its amount exceeds the configured threshold; a business policy change can change the decision for a new event.
@@ -71,7 +77,7 @@ printf 'header = "X-API-Key: %s"\n' "$(cat secrets/local-api-key)" |
 
 A new committed event returns 201 and `Location`; an identical POST returns 200 with the same stored evaluation. Reuse the saved file unchanged to replay it. Changed content under the same scoped event ID returns 409; a new payment needs a new event ID. Disabled rules appear explicitly as `DISABLED`. After a timeout or uncertain 5xx response, retrieve or replay the same ID/payload instead of generating a replacement identity.
 
-Existing volumes retain their active policy. Flyway V5 adds receipt-history indexes; activate a validated working copy to enable the historical rules on an existing high-amount-only installation. [Operations](docs/OPERATIONS.md) describes upgrades; seeding never silently overwrites business settings.
+Existing volumes retain their active policy. Flyway V5 adds receipt-history indexes and V6 adds the physical instrument/event-time index; activate a validated working copy to enable additional rules on an existing installation. [Operations](docs/OPERATIONS.md) describes upgrades; seeding never silently overwrites business settings.
 
 ## Test
 
@@ -82,7 +88,7 @@ With `JAVA_HOME` pointing to JDK 21:
 ./scripts/smoke.sh
 ```
 
-`verify` runs unit/contract tests and integration tests against disposable PostgreSQL and Redis containers and packages the executable JAR. The smoke test requires the locally built image and uses a separate disposable Compose project on port 18080. It covers two-process duplicate races, replay/conflict, live thresholds/toggles, cross-process customer-history totals, persisted retrieval and failure gates, then removes its containers, volumes and temporary fixtures. The two-instance check also uses port 18081. Set `SMOKE_PORT` and `SMOKE_PEER_PORT` when necessary. Docker must be available; integration tests are not silently skipped.
+`verify` runs unit/contract tests and integration tests against disposable PostgreSQL and Redis containers and packages the executable JAR. The smoke test requires the locally built image and uses a separate disposable Compose project on port 18080. It covers two-process duplicate races, replay/conflict, live thresholds/toggles, cross-process customer-history totals, physical travel, Swagger exposure, persisted retrieval and failure gates, then removes its containers, volumes and temporary fixtures. The two-instance check also uses port 18081. Set `SMOKE_PORT` and `SMOKE_PEER_PORT` when necessary. Docker must be available; integration tests are not silently skipped.
 
 For Docker contexts using a non-default Unix socket, expose that context to Testcontainers before running Maven:
 

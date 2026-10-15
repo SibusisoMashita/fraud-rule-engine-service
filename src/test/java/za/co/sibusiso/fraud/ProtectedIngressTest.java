@@ -270,7 +270,7 @@ class ProtectedIngressTest {
     private void assertAccepted(HttpResponse<String> response) {
         assertThat(response.statusCode()).as(response.body()).isIn(200,201);
         var body=JsonMapper.builder().build().readTree(response.body());
-        assertThat(body.get("evaluation").get("decision").asString()).isEqualTo("CLEAR");
+        assertThat(body.get("evaluation").get("decision").asString()).isIn("CLEAR","FLAGGED","INDETERMINATE");
     }
     private void assertStatus(HttpResponse<String> response,int status,String code) {
         assertThat(response.statusCode()).as(response.body()).isEqualTo(status);

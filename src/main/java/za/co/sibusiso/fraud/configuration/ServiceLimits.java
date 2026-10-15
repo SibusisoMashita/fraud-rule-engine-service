@@ -19,6 +19,7 @@ public record ServiceLimits(int schemaVersion, Api api, Operations operations) {
     }
 
     public record Api(int maxRegisteredRules, int maxEvidenceFactsPerRule, int maxBodyBytes,
+            int maxLocationCandidatesPerEvaluation, boolean documentationEnabled,
             int maxJsonDepth, int maxJsonNumberLength, int maxIdentifierLength, int maxCategoryLength,
             int maxCityLength, int maxCursorLength, int defaultPageSize, int maxPageSize,
             int defaultQueryRangeDays, int maxQueryRangeDays, int businessDeadlineMillis,
@@ -27,6 +28,8 @@ public record ServiceLimits(int schemaVersion, Api api, Operations operations) {
             bounded(maxRegisteredRules, 64, "Rule count");
             bounded(maxEvidenceFactsPerRule, 16, "Evidence facts");
             bounded(maxBodyBytes, 16384, "Body bytes");
+            ContractChecks.require(maxLocationCandidatesPerEvaluation > 0 && maxLocationCandidatesPerEvaluation < Integer.MAX_VALUE,
+                    "Invalid location candidate safety ceiling");
             bounded(maxJsonDepth, 8, "JSON depth");
             bounded(maxJsonNumberLength, 32, "JSON number length");
             bounded(maxIdentifierLength, 128, "Identifier length");

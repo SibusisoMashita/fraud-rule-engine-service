@@ -143,7 +143,38 @@ sed '/^  transactionVelocity:/,/^  impossibleTravel:/s/enabled: true/enabled: fa
 ./scripts/activate-policy.sh "$policy_fixture"
 sed 's/history-7/history-8/' "$flow_tmp/history-7.json" > "$flow_tmp/history-8.json"
 test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/history-8.json" "$flow_tmp/history-8-response.json")" = 201
-compose exec -T db psql -U postgres -d fraud -Atc "SELECT count(*) FROM fraud.rule_results WHERE scope='local-demo' AND event_id='history-8' AND status='DISABLED'" | grep -qx 4
+compose exec -T db psql -U postgres -d fraud -Atc "SELECT count(*) FROM fraud.rule_results WHERE scope='local-demo' AND event_id='history-8' AND status='DISABLED'" | grep -qx 3
+# Physical history crosses processes; policy activation changes new decisions only.
+./scripts/activate-policy.sh config/policy.example.yaml
+travel_time=$(date -u -v-10M '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '10 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')
+printf '{"eventId":"travel-ct","customerId":"travel-customer","instrumentId":"travel-card","transactionType":"CARD_PURCHASE","status":"BOOKED","channel":"CARD_PRESENT","amount":"1.00","currency":"ZAR","category":"SYNTHETIC","occurredAt":"%s","physicalLocation":{"latitude":-33.9249,"longitude":18.4241,"accuracyKm":0.1,"source":"VERIFIED_CARD_PRESENT_TERMINAL","city":"Cape Town"}}\n' "$travel_time" > "$flow_tmp/travel-ct.json"
+test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/travel-ct.json" "$flow_tmp/travel-ct-response.json")" = 201
+grep -Eq '"decision"[[:space:]]*:[[:space:]]*"INDETERMINATE"' "$flow_tmp/travel-ct-response.json"
+sed -e 's/travel-ct/travel-jhb/' -e "s/$travel_time/$flow_time/" -e 's/-33.9249/-26.2041/' -e 's/18.4241/28.0473/' -e 's/Cape Town/Johannesburg/' "$flow_tmp/travel-ct.json" > "$flow_tmp/travel-jhb.json"
+test "$(api_request "$peer_base" POST /api/v1/transactions "$flow_tmp/travel-jhb.json" "$flow_tmp/travel-jhb-response.json")" = 201
+grep -Eq '"decision"[[:space:]]*:[[:space:]]*"FLAGGED"' "$flow_tmp/travel-jhb-response.json"
+compose exec -T db psql -U postgres -d fraud -Atc "SELECT status||':'||(evidence->>'referenceEventId') FROM fraud.rule_results WHERE scope='local-demo' AND event_id='travel-jhb' AND rule_id='IMPOSSIBLE_TRAVEL'" | grep -qx MATCH:travel-ct
+sed 's/maxSpeedKmh: 1000/maxSpeedKmh: 20000/' config/policy.example.yaml > "$policy_fixture"
+./scripts/activate-policy.sh "$policy_fixture"
+test "$(docker inspect -f '{{.State.StartedAt}}' "$app_id")" = "$history_started"
+test "$(docker inspect -f '{{.State.StartedAt}}' "$peer_id")" = "$history_peer_started"
+sed 's/travel-jhb/travel-live/' "$flow_tmp/travel-jhb.json" > "$flow_tmp/travel-live.json"
+test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/travel-live.json" "$flow_tmp/travel-live-response.json")" = 201
+compose exec -T db psql -U postgres -d fraud -Atc "SELECT status FROM fraud.rule_results WHERE scope='local-demo' AND event_id='travel-live' AND rule_id='IMPOSSIBLE_TRAVEL'" | grep -qx NO_MATCH
+test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/travel-jhb.json" "$flow_tmp/travel-replay.json")" = 200
+cmp -s "$flow_tmp/travel-jhb-response.json" "$flow_tmp/travel-replay.json"
+travel_hash=$(compose exec -T db psql -U postgres -d fraud -Atc 'SELECT policy_hash FROM fraud.policy_head WHERE singleton')
+sed 's/maxCandidates: 500/maxCandidates: 2001/' config/policy.example.yaml > "$policy_fixture"
+if ./scripts/activate-policy.sh "$policy_fixture"; then
+    echo 'Candidate limit above infrastructure ceiling unexpectedly activated' >&2
+    exit 1
+fi
+test "$(compose exec -T db psql -U postgres -d fraud -Atc 'SELECT policy_hash FROM fraud.policy_head WHERE singleton')" = "$travel_hash"
+expect /swagger-ui/index.html 200
+expect /swagger-ui/assets/swagger-ui-bundle.js 200
+curl -fsS "$base/openapi.yaml" > "$flow_tmp/openapi.yaml"
+cmp -s api/openapi.yaml "$flow_tmp/openapi.yaml"
+expect /webjars/swagger-ui/index.html 403
 principal_hash=$(printf local-demo | openssl dgst -sha256 | awk '{print $NF}')
 quota_key="fraud:quota:$principal_hash:READ"
 quota_time=$(( $(date +%s) * 1000 + 60000 ))
@@ -176,7 +207,7 @@ grep -Eq '"decision"[[:space:]]*:[[:space:]]*"CLEAR"' "$flow_tmp/live-response.j
 grep -Eq "\"policyHash\"[[:space:]]*:[[:space:]]*\"$active_hash\"" "$flow_tmp/live-response.json"
 compose run --rm --no-deps policy-seed
 test "$(head_hash)" = "$active_hash"
-sed '/^  impossibleTravel:/,/^  smallPaymentBurstThenLarge:/s/enabled: false/enabled: true/' config/policy.example.yaml > "$policy_fixture"
+sed '/^  smallPaymentBurstThenLarge:/,$s/enabled: false/enabled: true/' config/policy.example.yaml > "$policy_fixture"
 if ./scripts/activate-policy.sh "$policy_fixture"; then
     echo 'Unavailable rule unexpectedly activated' >&2
     exit 1
@@ -199,17 +230,36 @@ expect /health/ready 503
 expect /health/live 200
 compose start db
 ready
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 5
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 6
 compose stop app
 compose logs app | grep -q 'Graceful shutdown complete'
 compose up -d --no-build
 ready
 # Re-running the real migration entrypoint must preserve the installed schema.
 compose run --rm --no-deps migrate
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 5
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 6
 test "$(head_hash)" = "$active_hash"
 test "$(api_request "$base" GET /api/v1/transactions/smoke-race /dev/null "$flow_tmp/restarted.json")" = 200
 cmp -s "$flow_tmp/first.json" "$flow_tmp/restarted.json"
+test "$(api_request "$base" GET /api/v1/transactions/travel-jhb /dev/null "$flow_tmp/travel-restarted.json")" = 200
+cmp -s "$flow_tmp/travel-jhb-response.json" "$flow_tmp/travel-restarted.json"
+# Documentation exposure is a startup setting; disabling it leaves API guards intact.
+compose stop app
+compose rm -f app
+sed 's/documentationEnabled: true/documentationEnabled: false/' config/service.example.yaml > "$limits_fixture"
+cat > "$override" <<YAML
+services:
+  app:
+    volumes:
+      - ./$limits_fixture:/app/config/service.example.yaml:ro
+YAML
+compose -f compose.yaml -f "$override" up -d --no-build --wait --wait-timeout 120 app
+ready
+expect /swagger-ui/index.html 403
+expect /openapi.yaml 403
+expect /api/v1/evaluations 401
+compose stop app
+compose rm -f app
 # Invalid operational settings must block a new application process.
 compose stop app
 compose rm -f app
@@ -244,4 +294,4 @@ if compose -f compose.yaml -f "$override" up -d --no-build app; then
     exit 1
 fi
 test -z "$(compose ps --status running -q app)"
-echo 'Runtime, live-policy, protected-ingress, transactional-evaluation and historical-rule smoke checks passed.'
+echo 'Runtime, live-policy, protected-ingress, transactional-evaluation historical-rule, impossible-travel and Swagger smoke checks passed.'

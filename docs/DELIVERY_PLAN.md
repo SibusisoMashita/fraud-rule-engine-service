@@ -1,6 +1,6 @@
 # Delivery plan
 
-Stages 0–5 are implemented. Customer-locked evaluations now include velocity and same-currency cumulative spend, using database aggregates through the captured watermark. Windows, limits, thresholds and enabled states remain live database policy. The next stage adds impossible travel.
+Stages 0–6 are implemented. Customer-locked evaluations include velocity, cumulative spend and trusted physical impossible travel. Business thresholds, windows, evidence filters and rule toggles remain live database policy. Swagger UI serves the maintained contract. The next stage adds the small-payment sequence.
 
 ## Milestones
 
@@ -12,7 +12,7 @@ Stages 0–5 are implemented. Customer-locked evaluations now include velocity a
 | 3. Protected ingress | Scoped authentication/authorization, trusted-source permissions, shared quotas and bounded request processing | Access-isolation, validation, quota and dependency-failure tests |
 | 4. First evaluation flow | Atomic persistence, idempotency, customer locking, high-amount rule and event retrieval | POST-to-GET flow, replay/conflict handling, rollback, duplicate races and lost-response recovery |
 | 5. Historical rules | Velocity and cumulative debit spend | Window/currency boundaries, multi-instance history correctness and query measurements |
-| 6. Impossible travel | Trusted physical evidence, distance/time/uncertainty and bounded candidates | Plausible flights, equal-time/delayed events, different instruments and missing-reference cases |
+| 6. Impossible travel | Trusted physical evidence, distance/time/uncertainty and bounded candidates | Plausible flights, equal-time/delayed events, different instruments, bounded candidates, live policy and missing-reference cases; packaged Swagger access checks |
 | 7. Payment sequence | Small-payment burst followed by a large payment | Event-time ordering, decision-table coverage, policy-change replay and rule-extension tests |
 | 8. Evaluation queries | Authorized filtered keyset pages and active-policy inspection | Runtime contract tests, access isolation, bounded queries and live-pagination behaviour |
 | 9. Operational verification | Recovery, deployment compatibility, resource limits and measured capacity | Fault/kill/migration/restore drills, two-instance tests, benchmark reports and security scans |

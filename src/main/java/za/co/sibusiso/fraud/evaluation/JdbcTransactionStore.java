@@ -56,6 +56,31 @@ public class JdbcTransactionStore implements TransactionStore {
         jdbc.update("INSERT INTO fraud.instrument_owners(scope,instrument_id,customer_id) VALUES (?,?,?) ON CONFLICT DO NOTHING", scope,instrumentId,customerId);
         return jdbc.queryForObject("SELECT customer_id FROM fraud.instrument_owners WHERE scope=? AND instrument_id=?",String.class,scope,instrumentId);
     }
+    @Override public LocationCandidates locations(String scope, String customerId, LocationQuery query, long highWatermark) {
+        var rows = jdbc.query(locationSql(), (row,index) -> new LocationCandidates.Observation(row.getString("event_id"),
+                        row.getObject("occurred_at",OffsetDateTime.class).toInstant(), new TransactionEvent.PhysicalLocation(
+                            row.getBigDecimal("latitude"),row.getBigDecimal("longitude"),row.getBigDecimal("accuracy_km"),
+                            TransactionEvent.LocationSource.valueOf(row.getString("location_source")),null)),
+                locationArguments(scope,customerId,query,highWatermark));
+        return new LocationCandidates(rows,rows.size()>query.maxCandidates());
+    }
+    static String locationSql() {
+        return """
+                SELECT event_id,occurred_at,latitude,longitude,accuracy_km,location_source
+                FROM fraud.transactions
+                WHERE scope=? AND customer_id=? AND instrument_id=? AND customer_sequence<=?
+                  AND occurred_at>=? AND occurred_at<=? AND location_source=ANY(?) AND channel=ANY(?) AND accuracy_km<=?
+                ORDER BY occurred_at,event_id LIMIT ?
+                """;
+    }
+    static Object[] locationArguments(String scope, String customerId, LocationQuery query, long highWatermark) {
+        return new Object[]{
+                scope,customerId,query.instrumentId(),highWatermark,utc(query.occurredAt().minusSeconds(query.comparisonAgeSeconds())),
+                utc(query.occurredAt().plusSeconds(query.comparisonAgeSeconds())),
+                query.sources().stream().map(Enum::name).toArray(String[]::new),query.channels().stream().map(Enum::name).toArray(String[]::new),
+                query.maxAccuracyKm(),Math.addExact(query.maxCandidates(),1)};
+    }
+
     static String historySql(HistoryQuery query) {
         return switch (query) {
             case HistoryQuery.Count ignored -> """

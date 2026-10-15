@@ -19,7 +19,8 @@ class RuleEngineTest {
     private final StrictYaml yaml=new StrictYaml();
     private final String source=yaml.readText(new ClassPathResource("config/policy.example.yaml"))
             .replace("transactionVelocity:\n    enabled: true","transactionVelocity:\n    enabled: false")
-            .replace("cumulativeSpend:\n    enabled: true","cumulativeSpend:\n    enabled: false");
+            .replace("cumulativeSpend:\n    enabled: true","cumulativeSpend:\n    enabled: false")
+            .replace("impossibleTravel:\n    enabled: true","impossibleTravel:\n    enabled: false");
     private final ServiceLimits limits=yaml.read(new ClassPathResource("config/service.example.yaml"),ServiceLimits.class);
     private final PolicyLoader loader=new PolicyLoader(yaml,RuleRegistry.of(BuiltInRules.definitions(),limits.api().maxRegisteredRules()));
 
@@ -40,7 +41,7 @@ class RuleEngineTest {
                 .hasMessageContaining("evidence limit");
     }
     @Test void enablingAnUnimplementedRuleFailsInsteadOfSavingAFabricatedNonmatch() {
-        var policy=loader.read(source.replace("impossibleTravel:\n    enabled: false","impossibleTravel:\n    enabled: true"));
+        var policy=loader.read(source.replace("smallPaymentBurstThenLarge:\n    enabled: false","smallPaymentBurstThenLarge:\n    enabled: true"));
         assertThatThrownBy(()->new RuleEngine(List.of(new HighAmountRule()), limits.api().maxEvidenceFactsPerRule()).verify(policy)).hasMessageContaining("not supported");
     }
     @Test void sixthSpringRuleExecutesWithoutChangingOrchestrationAndDisabledHighAmountIsNotCalled() {

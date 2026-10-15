@@ -19,7 +19,7 @@ rules:
     windowSeconds: 1800
     thresholds: {ZAR: "30000.00"}
   impossibleTravel:
-    enabled: false
+    enabled: true
     maxComparisonAgeSeconds: 86400
     maxCandidates: 500
     maxSpeedKmh: 1000

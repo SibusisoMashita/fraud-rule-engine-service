@@ -17,6 +17,7 @@ public interface TransactionStore {
     State lockCustomer(String scope, String customerId);
     String bindInstrument(String scope, String instrumentId, String customerId);
     Instant databaseTime();
+    LocationCandidates locations(String scope, String customerId, LocationQuery query, long highWatermark);
     BigDecimal aggregate(String scope, String customerId, HistoryQuery query, Instant acceptedAt, long highWatermark);
     void insertEvent(Caller caller, TransactionEvent event, String hash, Instant acceptedAt, long sequence);
     void insertEvaluation(String scope, String eventId, UUID id, String policyHash, String buildId,

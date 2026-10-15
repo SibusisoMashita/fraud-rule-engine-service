@@ -30,9 +30,26 @@ public final class RuleEngine {
                     && implementation.definition().algorithmVersion().equals(configured.definition().algorithmVersion())
                     && implementation.definition().settingsType().equals(configured.definition().settingsType()),
                     "Enabled policy rule is not supported by this build: " + id.value());
+            validate(implementation, configured.settings());
             ContractChecks.require(implementation.maximumEvidenceFacts() <= maximumEvidenceFacts,
                     "Configured evidence limit cannot represent enabled rule: " + id.value());
         });
+    }
+
+    private <C extends RuleSettings> void validate(FraudRule<C> rule, RuleSettings settings) {
+        rule.validateConfiguration(rule.definition().settingsType().cast(settings));
+    }
+    public Set<LocationQuery> locationQueries(TransactionEvent event, PolicySnapshot policy) {
+        verify(policy);
+        var queries = new LinkedHashSet<LocationQuery>();
+        for (var configured : policy.rules().values()) {
+            if (configured.settings().enabled())
+                location(implementations.get(configured.definition().id()), configured.settings(), event).ifPresent(queries::add);
+        }
+        return Collections.unmodifiableSet(queries);
+    }
+    private <C extends RuleSettings> java.util.Optional<LocationQuery> location(FraudRule<C> rule, RuleSettings settings, TransactionEvent event) {
+        return rule.locationQuery(event, rule.definition().settingsType().cast(settings));
     }
 
     public Set<HistoryQuery> historyQueries(TransactionEvent event, PolicySnapshot policy) {

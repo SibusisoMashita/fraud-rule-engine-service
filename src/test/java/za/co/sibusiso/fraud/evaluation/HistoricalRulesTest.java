@@ -46,7 +46,7 @@ class HistoricalRulesTest {
     @Test void enabledRulesDeclareOnlyTheirCapturedPolicyWindowsAndDisabledRulesNeedNoHistory() {
         var yaml=new StrictYaml();var limits=yaml.read(new ClassPathResource("config/service.example.yaml"),ServiceLimits.class);
         var loader=new PolicyLoader(yaml,RuleRegistry.of(BuiltInRules.definitions(),limits.api().maxRegisteredRules()));
-        String source=yaml.readText(new ClassPathResource("config/policy.example.yaml"));
+        String source=yaml.readText(new ClassPathResource("config/policy.example.yaml")).replace("impossibleTravel:\n    enabled: true","impossibleTravel:\n    enabled: false");
         var engine=new RuleEngine(List.of(new HighAmountRule(),new TransactionVelocityRule(),new CumulativeSpendRule()),limits.api().maxEvidenceFactsPerRule());
         assertThat(engine.historyQueries(event,loader.read(source.replace("windowSeconds: 600","windowSeconds: 37")
                 .replace("windowSeconds: 1800","windowSeconds: 59"))))

@@ -361,7 +361,7 @@ class TransactionalEvaluationTest {
     }
     private String activate(String source) {
         var yaml=new StrictYaml();var snapshot=new PolicyLoader(yaml,RuleRegistry.of(BuiltInRules.definitions(),limits.api().maxRegisteredRules())).read(source);
-        new RuleEngine(List.of(new HighAmountRule(), new za.co.sibusiso.fraud.evaluation.TransactionVelocityRule(), new za.co.sibusiso.fraud.evaluation.CumulativeSpendRule()), limits.api().maxEvidenceFactsPerRule()).verify(snapshot);
+        new RuleEngine(List.of(new HighAmountRule(), new za.co.sibusiso.fraud.evaluation.TransactionVelocityRule(), new za.co.sibusiso.fraud.evaluation.CumulativeSpendRule(), new ImpossibleTravelRule(limits.api().maxLocationCandidatesPerEvaluation())), limits.api().maxEvidenceFactsPerRule()).verify(snapshot);
         return database("fraud_policy_admin").queryForObject("SELECT fraud.activate_policy(?,?,false)",String.class,snapshot.policyHash(),source);
     }
     private void assertCounts(Identity who,int events,int instruments) {

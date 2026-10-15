@@ -33,12 +33,16 @@ class SecurityConfiguration {
                 .requestCache(cache -> cache.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(new IngressFilter(authenticator, limiter, limits), AnonymousAuthenticationFilter.class)
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.GET, "/health/live", "/health/ready").permitAll()
+                .authorizeHttpRequests(auth -> {
+                    auth.requestMatchers(HttpMethod.GET, "/health/live", "/health/ready").permitAll();
+                    if (limits.api().documentationEnabled()) auth.requestMatchers(HttpMethod.GET,
+                            "/swagger-ui", "/swagger-ui/", "/swagger-ui.html", "/swagger-ui/**", "/openapi.yaml").permitAll();
+                    auth
                         .requestMatchers(HttpMethod.POST, "/api/v1/transactions").hasAuthority("INGEST")
                         .requestMatchers(HttpMethod.GET, "/api/v1/transactions/*", "/api/v1/evaluations").hasAuthority("READ")
                         .requestMatchers(HttpMethod.GET, "/api/v1/rules").hasAuthority("POLICY")
-                        .anyRequest().denyAll())
+                        .anyRequest().denyAll();
+                })
                 .exceptionHandling(errors -> errors
                         .authenticationEntryPoint((request, response, failure) -> ApiProblems.write(request, response, new ApiFailure(403, "FORBIDDEN")))
                         .accessDeniedHandler((request, response, failure) -> ApiProblems.write(request, response, new ApiFailure(403, "FORBIDDEN"))))

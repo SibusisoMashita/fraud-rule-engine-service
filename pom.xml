@@ -14,9 +14,15 @@
   <description>Configurable fraud evaluation for categorized transaction events</description>
   <properties>
     <java.version>21</java.version>
+    <swagger-ui.version>5.33.2</swagger-ui.version>
     <project.build.outputTimestamp>2026-10-15T00:00:00Z</project.build.outputTimestamp>
   </properties>
   <dependencies>
+    <dependency>
+      <groupId>org.webjars</groupId>
+      <artifactId>swagger-ui</artifactId>
+      <version>${swagger-ui.version}</version>
+    </dependency>
     <dependency>
       <groupId>org.yaml</groupId>
       <artifactId>snakeyaml</artifactId>
@@ -86,6 +92,11 @@
           <include>policy.example.yaml</include>
           <include>service.example.yaml</include>
         </includes>
+      </resource>
+      <resource>
+        <directory>api</directory>
+        <targetPath>api</targetPath>
+        <includes><include>openapi.yaml</include></includes>
       </resource>
     </resources>
     <plugins>

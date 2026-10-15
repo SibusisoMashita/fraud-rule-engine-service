@@ -33,7 +33,8 @@ class HistoryStoreTest {
         var yaml=new za.co.sibusiso.fraud.configuration.StrictYaml();
         String source=yaml.readText(new org.springframework.core.io.ClassPathResource("config/policy.example.yaml"))
                 .replace("transactionVelocity:\n    enabled: true","transactionVelocity:\n    enabled: false")
-                .replace("cumulativeSpend:\n    enabled: true","cumulativeSpend:\n    enabled: false");
+                .replace("cumulativeSpend:\n    enabled: true","cumulativeSpend:\n    enabled: false")
+                .replace("impossibleTravel:\n    enabled: true","impossibleTravel:\n    enabled: false");
         var policy=new za.co.sibusiso.fraud.configuration.PolicyLoader(yaml,
                 za.co.sibusiso.fraud.configuration.RuleRegistry.of(za.co.sibusiso.fraud.configuration.BuiltInRules.definitions(),64)).read(source);
         highThreshold=((za.co.sibusiso.fraud.configuration.BuiltInRuleSettings.HighAmount)policy.rules().get(new za.co.sibusiso.fraud.domain.RuleId("HIGH_AMOUNT")).settings()).thresholds().get("ZAR").value();
@@ -81,13 +82,69 @@ class HistoryStoreTest {
         System.out.println("History query fixture: 6000 receipts; 300 target rows; count="
                 +json.readTree(countPlan).findValues("Index Name")+"; spend="+json.readTree(spendPlan).findValues("Index Name"));
     }
+    @Test void locationLookupUsesInstrumentEventTimeIndexWithoutForcedPlannerSettings() {
+        String scope=fixtureScope();bulk(scope,6000,20);
+        jdbc.execute("VACUUM ANALYZE fraud.transactions");
+        var query=new LocationQuery("customer-1",accepted.minusSeconds(86400).plusSeconds(3000),60,300,new BigDecimal("5"),
+                java.util.List.of(za.co.sibusiso.fraud.domain.TransactionEvent.LocationSource.VERIFIED_CARD_PRESENT_TERMINAL),
+                java.util.List.of(za.co.sibusiso.fraud.domain.TransactionEvent.Channel.CARD_PRESENT));
+        assertThat(store.locations(scope,"customer-1",query,300).observations()).hasSize(6);
+        String plan=jdbc.queryForObject("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+JdbcTransactionStore.locationSql(),String.class,
+                JdbcTransactionStore.locationArguments(scope,"customer-1",query,300));
+        assertThat(plan).contains("transactions_instrument_location_time");
+    }
+    @Test void locationHistoryUsesEventTimeBothDirectionsAndAdmissionWatermark() {
+        String scope=fixtureScope(),other=fixtureScope();
+        physical(scope,"card","lower",accepted.minusSeconds(60),1,"0.1",false);
+        physical(scope,"card","upper",accepted.plusSeconds(60),2,"0.1",false);
+        physical(scope,"card","same",accepted,3,"5",false);
+        physical(scope,"card","later-sequence",accepted,4,"0.1",false);
+        physical(scope,"card","too-old",accepted.minusSeconds(60).minusNanos(1000),5,"0.1",false);
+        physical(scope,"card","too-new",accepted.plusSeconds(60).plusNanos(1000),6,"0.1",false);
+        physical(scope,"card","uncertain",accepted,7,"5.000001",false);
+        physical(scope,"card","atm-source",accepted,8,"0.1",true);
+        physical(scope,"other-card","other-instrument",accepted,9,"0.1",false);
+        physical(other,"card","other-scope",accepted,1,"0.1",false);
+        var query=locationQuery(3);
+        var first=store.locations(scope,"customer",query,3);
+        assertThat(first.overflow()).isFalse();
+        assertThat(first.observations()).extracting(LocationCandidates.Observation::eventId).containsExactly("lower","same","upper");
+        var all=store.locations(scope,"customer",locationQuery(10),9);
+        assertThat(all.observations()).extracting(LocationCandidates.Observation::eventId).containsExactly("lower","later-sequence","same","upper");
+        assertThat(store.locations(scope,"other-customer",locationQuery(10),9).observations()).isEmpty();
+        var overflow=store.locations(scope,"customer",locationQuery(2),3);
+        assertThat(overflow.overflow()).isTrue();assertThat(overflow.observations()).hasSize(3);
+    }
+    private LocationQuery locationQuery(int cap) {
+        return new LocationQuery("card",accepted,60,cap,new BigDecimal("5"),
+                java.util.List.of(za.co.sibusiso.fraud.domain.TransactionEvent.LocationSource.VERIFIED_CARD_PRESENT_TERMINAL),
+                java.util.List.of(za.co.sibusiso.fraud.domain.TransactionEvent.Channel.CARD_PRESENT));
+    }
+    private void physical(String scope,String instrument,String id,Instant occurred,long sequence,String accuracy,boolean atm) {
+        var tx=new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.support.JdbcTransactionManager(jdbc.getDataSource()));
+        tx.executeWithoutResult(status->{
+            var writer=new JdbcTransactionStore(jdbc);
+            writer.createCustomer(scope,"customer");writer.lockCustomer(scope,"customer");writer.bindInstrument(scope,instrument,"customer");
+            var source=atm?za.co.sibusiso.fraud.domain.TransactionEvent.LocationSource.VERIFIED_ATM_TERMINAL:za.co.sibusiso.fraud.domain.TransactionEvent.LocationSource.VERIFIED_CARD_PRESENT_TERMINAL;
+            var caller=new za.co.sibusiso.fraud.ingress.Caller(scope,scope,java.util.Set.of(za.co.sibusiso.fraud.ingress.Caller.Role.INGEST),java.util.Set.of(source),1);
+            var input=new za.co.sibusiso.fraud.domain.TransactionEvent(id,"customer",instrument,
+                    atm?za.co.sibusiso.fraud.domain.TransactionEvent.Type.ATM_WITHDRAWAL:za.co.sibusiso.fraud.domain.TransactionEvent.Type.CARD_PURCHASE,
+                    za.co.sibusiso.fraud.domain.TransactionEvent.Status.BOOKED,
+                    atm?za.co.sibusiso.fraud.domain.TransactionEvent.Channel.ATM:za.co.sibusiso.fraud.domain.TransactionEvent.Channel.CARD_PRESENT,
+                    za.co.sibusiso.fraud.domain.Money.parse("ZAR","1"),"SYNTHETIC",occurred,
+                    new za.co.sibusiso.fraud.domain.TransactionEvent.PhysicalLocation(new BigDecimal("-33.9249"),new BigDecimal("18.4241"),new BigDecimal(accuracy),source,"Cape Town"));
+            writer.insertEvent(caller,input,za.co.sibusiso.fraud.contracts.CanonicalTransaction.hash(scope,input),accepted,sequence);
+            evaluationRows(scope);writer.advance(scope,"customer",accepted,sequence);
+        });
+    }
+
     private String plan(String scope,String customer,HistoryQuery query,long watermark) {
         return jdbc.queryForObject("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+JdbcTransactionStore.historySql(query),String.class,
                 JdbcTransactionStore.historyArguments(scope,customer,query,accepted,watermark));
     }
     private String fixtureScope() {
         String scope="history-"+UUID.randomUUID();
-        jdbc.update("INSERT INTO fraud.api_principals(principal_id,scope,enabled,roles,location_sources) VALUES (?,?,true,ARRAY['INGEST'],ARRAY[]::text[])",scope,scope);
+        jdbc.update("INSERT INTO fraud.api_principals(principal_id,scope,enabled,roles,location_sources) VALUES (?,?,true,ARRAY['INGEST'],ARRAY['VERIFIED_ATM_TERMINAL','VERIFIED_CARD_PRESENT_TERMINAL'])",scope,scope);
         return scope;
     }
     private void append(String scope,String customer,String event,String currency,String amount,Instant receipt,long sequence) {
@@ -113,9 +170,9 @@ class HistoryStoreTest {
             jdbc.update("INSERT INTO fraud.instrument_owners(scope,instrument_id,customer_id) SELECT scope,customer_id,customer_id FROM fraud.customer_processing_state WHERE scope=?",scope);
             jdbc.update("""
                     INSERT INTO fraud.transactions(scope,event_id,customer_id,instrument_id,request_hash,canonicalization_version,transaction_type,status,channel,
-                        amount,currency,category,occurred_at,accepted_at,customer_sequence,producer_id,source_permission_version,source_permissions,input_json)
-                    SELECT ?, 'fixture-'||n, 'customer-'||(n % ?), 'customer-'||(n % ?), repeat('0',64),1,'CARD_PURCHASE','BOOKED','ECOMMERCE',
-                        0.01,'ZAR','SYNTHETIC',?::timestamptz,?::timestamptz,n / ? + 1,?,1,'[]','{}' FROM generate_series(0,?-1) n
+                        amount,currency,category,occurred_at,accepted_at,customer_sequence,producer_id,source_permission_version,source_permissions,latitude,longitude,accuracy_km,location_source,input_json)
+                    SELECT ?, 'fixture-'||n, 'customer-'||(n % ?), 'customer-'||(n % ?), repeat('0',64),1,'CARD_PURCHASE','BOOKED','CARD_PRESENT',
+                        0.01,'ZAR','SYNTHETIC',?::timestamptz + n * interval '1 second',?::timestamptz,n / ? + 1,?,1,'["VERIFIED_CARD_PRESENT_TERMINAL"]',-33.9249,18.4241,0.1,'VERIFIED_CARD_PRESENT_TERMINAL','{}' FROM generate_series(0,?-1) n
                     """,scope,customers,customers,utc(accepted.minusSeconds(86400)),utc(accepted),customers,scope,size);
             evaluationRows(scope);
         });
