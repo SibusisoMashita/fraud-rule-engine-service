@@ -34,7 +34,8 @@ class HistoryStoreTest {
         String source=yaml.readText(new org.springframework.core.io.ClassPathResource("config/policy.example.yaml"))
                 .replace("transactionVelocity:\n    enabled: true","transactionVelocity:\n    enabled: false")
                 .replace("cumulativeSpend:\n    enabled: true","cumulativeSpend:\n    enabled: false")
-                .replace("impossibleTravel:\n    enabled: true","impossibleTravel:\n    enabled: false");
+                .replace("impossibleTravel:\n    enabled: true","impossibleTravel:\n    enabled: false")
+                .replace("smallPaymentBurstThenLarge:\n    enabled: true","smallPaymentBurstThenLarge:\n    enabled: false");
         var policy=new za.co.sibusiso.fraud.configuration.PolicyLoader(yaml,
                 za.co.sibusiso.fraud.configuration.RuleRegistry.of(za.co.sibusiso.fraud.configuration.BuiltInRules.definitions(),64)).read(source);
         highThreshold=((za.co.sibusiso.fraud.configuration.BuiltInRuleSettings.HighAmount)policy.rules().get(new za.co.sibusiso.fraud.domain.RuleId("HIGH_AMOUNT")).settings()).thresholds().get("ZAR").value();
@@ -81,6 +82,41 @@ class HistoryStoreTest {
         var json=tools.jackson.databind.json.JsonMapper.builder().build();
         System.out.println("History query fixture: 6000 receipts; 300 target rows; count="
                 +json.readTree(countPlan).findValues("Index Name")+"; spend="+json.readTree(spendPlan).findValues("Index Name"));
+    }
+    @Test void smallPaymentsUseAnOpenEventTimeWindowInclusiveAmountAndCapturedWatermark() {
+        String scope=fixtureScope(),other=fixtureScope();
+        sequenceRow(scope,"customer","lower","ZAR","1",accepted.minusSeconds(60),1);
+        sequenceRow(scope,"customer","inside-lower","ZAR","0.10",accepted.minusSeconds(60).plusNanos(1000),2);
+        sequenceRow(scope,"customer","inside-upper","ZAR","50.00",accepted.minusNanos(1000),3);
+        sequenceRow(scope,"customer","equal-time","ZAR","1",accepted,4);
+        sequenceRow(scope,"customer","later-time","ZAR","1",accepted.plusNanos(1000),5);
+        sequenceRow(scope,"customer","above-small","ZAR","50.0001",accepted.minusSeconds(1),6);
+        sequenceRow(scope,"customer","foreign-currency","USD","1",accepted.minusSeconds(1),7);
+        sequenceRow(scope,"customer","beyond-watermark","ZAR","0.20",accepted.minusSeconds(1),8);
+        sequenceRow(scope,"another-customer","other-customer","ZAR","1",accepted.minusSeconds(1),1);
+        sequenceRow(other,"customer","other-scope","ZAR","1",accepted.minusSeconds(1),1);
+        var query=new SmallPaymentsQuery(accepted,60,"ZAR",new BigDecimal("50"));
+        var first=store.smallPayments(scope,"customer",query,7);
+        assertThat(first.count()).isEqualTo(2);assertThat(first.total()).isEqualByComparingTo("50.10");
+        var next=store.smallPayments(scope,"customer",query,8);
+        assertThat(next.count()).isEqualTo(3);assertThat(next.total()).isEqualByComparingTo("50.30");
+        physical(scope,"another-card","another-instrument",accepted.minusSeconds(1),9,"0.1",false);
+        assertThat(store.smallPayments(scope,"customer",query,9).count()).isEqualTo(4);
+        assertThat(store.smallPayments(scope,"missing",query,9)).isEqualTo(new SmallPaymentsHistory(0,BigDecimal.ZERO));
+        assertThat(store.smallPayments(scope,"customer",new SmallPaymentsQuery(accepted,61,"ZAR",new BigDecimal("50")),7).count()).isEqualTo(3);
+        assertThat(store.smallPayments(scope,"customer",new SmallPaymentsQuery(accepted,60,"ZAR",new BigDecimal("0.10")),7).count()).isEqualTo(1);
+    }
+    @Test void smallPaymentAggregateIncludesHistoryBeyondPageLimitsUsingItsCoveringEventIndex() {
+        String scope=fixtureScope();bulk(scope,6000,20);jdbc.execute("VACUUM ANALYZE fraud.transactions");
+        var query=new SmallPaymentsQuery(accepted.minusSeconds(86400).plusSeconds(6000),6001,"ZAR",new BigDecimal("0.01"));
+        var history=store.smallPayments(scope,"customer-1",query,300);
+        assertThat(history.count()).isEqualTo(300);assertThat(history.total()).isEqualByComparingTo("3.00");
+        String plan=jdbc.queryForObject("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+JdbcTransactionStore.smallPaymentsSql(),String.class,
+                JdbcTransactionStore.smallPaymentsArguments(scope,"customer-1",query,300));
+        assertThat(plan).contains("Index Only Scan").contains("transactions_customer_currency_event_small_payments");
+    }
+    private void sequenceRow(String scope,String customer,String event,String currency,String amount,Instant occurred,long sequence) {
+        bulkRow(scope,customer,event,currency,amount,accepted,sequence,occurred);
     }
     @Test void locationLookupUsesInstrumentEventTimeIndexWithoutForcedPlannerSettings() {
         String scope=fixtureScope();bulk(scope,6000,20);
@@ -151,6 +187,9 @@ class HistoryStoreTest {
         bulkRow(scope,customer,event,currency,amount,receipt,sequence);
     }
     private void bulkRow(String scope,String customer,String event,String currency,String amount,Instant receipt,long sequence) {
+        bulkRow(scope,customer,event,currency,amount,receipt,sequence,accepted.minusSeconds(86400));
+    }
+    private void bulkRow(String scope,String customer,String event,String currency,String amount,Instant receipt,long sequence,Instant occurred) {
         var tx=new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.support.JdbcTransactionManager(jdbc.getDataSource()));
         tx.executeWithoutResult(status->{
             jdbc.update("INSERT INTO fraud.customer_processing_state(scope,customer_id,last_accepted_at,customer_sequence) VALUES (?,?,?,?) ON CONFLICT DO NOTHING",scope,customer,utc(receipt),sequence);
@@ -159,7 +198,7 @@ class HistoryStoreTest {
                     INSERT INTO fraud.transactions(scope,event_id,customer_id,instrument_id,request_hash,canonicalization_version,transaction_type,status,channel,
                         amount,currency,category,occurred_at,accepted_at,customer_sequence,producer_id,source_permission_version,source_permissions,input_json)
                     VALUES (?,?,?,?,repeat('0',64),1,'CARD_PURCHASE','BOOKED','ECOMMERCE',?::numeric,?,'SYNTHETIC',?::timestamptz,?,?,?,1,'[]','{}')
-                    """,scope,event,customer,customer,amount,currency,utc(accepted.minusSeconds(86400)),utc(receipt),sequence,scope);
+                    """,scope,event,customer,customer,amount,currency,utc(occurred),utc(receipt),sequence,scope);
             evaluationRows(scope);
         });
     }

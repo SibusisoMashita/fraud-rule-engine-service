@@ -14,5 +14,6 @@ public class EvaluationConfiguration {
     @Bean ImpossibleTravelRule impossibleTravelRule(za.co.sibusiso.fraud.configuration.ServiceLimits limits) {
         return new ImpossibleTravelRule(limits.api().maxLocationCandidatesPerEvaluation());
     }
+    @Bean SmallPaymentBurstRule smallPaymentBurstRule() { return new SmallPaymentBurstRule(); }
     @Bean RuleEngine ruleEngine(List<FraudRule<?>> implementations, za.co.sibusiso.fraud.configuration.ServiceLimits limits) { return new RuleEngine(implementations, limits.api().maxEvidenceFactsPerRule()); }
 }

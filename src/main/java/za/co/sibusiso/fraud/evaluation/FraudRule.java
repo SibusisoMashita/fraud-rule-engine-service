@@ -16,6 +16,7 @@ public interface FraudRule<C extends RuleSettings> {
     RuleDefinition<C> definition();
     int maximumEvidenceFacts();
     default void validateConfiguration(C settings) { }
+    default Optional<SmallPaymentsQuery> smallPaymentsQuery(TransactionEvent event, C settings) { return Optional.empty(); }
     default Optional<LocationQuery> locationQuery(TransactionEvent event, C settings) { return Optional.empty(); }
     default Set<HistoryQuery> historyQueries(TransactionEvent event, C settings) { return Set.of(); }
     RuleResult evaluate(TransactionEvent event, C settings, Context context) throws Exception;

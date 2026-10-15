@@ -143,7 +143,7 @@ sed '/^  transactionVelocity:/,/^  impossibleTravel:/s/enabled: true/enabled: fa
 ./scripts/activate-policy.sh "$policy_fixture"
 sed 's/history-7/history-8/' "$flow_tmp/history-7.json" > "$flow_tmp/history-8.json"
 test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/history-8.json" "$flow_tmp/history-8-response.json")" = 201
-compose exec -T db psql -U postgres -d fraud -Atc "SELECT count(*) FROM fraud.rule_results WHERE scope='local-demo' AND event_id='history-8' AND status='DISABLED'" | grep -qx 3
+compose exec -T db psql -U postgres -d fraud -Atc "SELECT count(*) FROM fraud.rule_results WHERE scope='local-demo' AND event_id='history-8' AND status='DISABLED'" | grep -qx 2
 # Physical history crosses processes; policy activation changes new decisions only.
 ./scripts/activate-policy.sh config/policy.example.yaml
 travel_time=$(date -u -v-10M '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '10 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')
@@ -175,6 +175,39 @@ expect /swagger-ui/assets/swagger-ui-bundle.js 200
 curl -fsS "$base/openapi.yaml" > "$flow_tmp/openapi.yaml"
 cmp -s api/openapi.yaml "$flow_tmp/openapi.yaml"
 expect /webjars/swagger-ui/index.html 403
+# Three small payments across instruments, then one large payment on the peer.
+./scripts/activate-policy.sh config/policy.example.yaml
+sequence_time=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+small_time=$(date -u -v-30S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '30 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')
+sequence_n=1
+while [ "$sequence_n" -le 3 ]; do
+    printf '{"eventId":"sequence-small-%s","customerId":"sequence-customer","instrumentId":"sequence-card-%s","transactionType":"CARD_PURCHASE","status":"BOOKED","channel":"ECOMMERCE","amount":"50.00","currency":"ZAR","category":"SYNTHETIC","occurredAt":"%s"}\n' "$sequence_n" "$sequence_n" "$small_time" > "$flow_tmp/sequence-small.json"
+    test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/sequence-small.json" "$flow_tmp/sequence-small-response.json")" = 201
+    sequence_n=$((sequence_n + 1))
+done
+printf '{"eventId":"sequence-large","customerId":"sequence-customer","instrumentId":"sequence-large-card","transactionType":"CARD_PURCHASE","status":"BOOKED","channel":"ECOMMERCE","amount":"5000.01","currency":"ZAR","category":"SYNTHETIC","occurredAt":"%s"}\n' "$sequence_time" > "$flow_tmp/sequence-large.json"
+test "$(api_request "$peer_base" POST /api/v1/transactions "$flow_tmp/sequence-large.json" "$flow_tmp/sequence-large-response.json")" = 201
+grep -Eq '"decision"[[:space:]]*:[[:space:]]*"FLAGGED"' "$flow_tmp/sequence-large-response.json"
+compose exec -T db psql -U postgres -d fraud -Atc "SELECT status||':'||(evidence->>'count')||':'||((evidence->>'total')::numeric=150)::text FROM fraud.rule_results WHERE scope='local-demo' AND event_id='sequence-large' AND rule_id='SMALL_PAYMENT_BURST_THEN_LARGE'" | grep -qx MATCH:3:true
+for sequence_setting in count small window large disabled; do
+    case "$sequence_setting" in
+        count) sed 's/minSmallPayments: 3/minSmallPayments: 4/' config/policy.example.yaml > "$policy_fixture";;
+        small) sed 's/smallPaymentMaximum: {ZAR: "50.00"}/smallPaymentMaximum: {ZAR: "49.99"}/' config/policy.example.yaml > "$policy_fixture";;
+        window) sed 's/windowSeconds: 900/windowSeconds: 1/' config/policy.example.yaml > "$policy_fixture";;
+        large) sed 's/largePaymentThreshold: {ZAR: "5000.00"}/largePaymentThreshold: {ZAR: "6000.00"}/' config/policy.example.yaml > "$policy_fixture";;
+        disabled) sed '/^  smallPaymentBurstThenLarge:/,$s/enabled: true/enabled: false/' config/policy.example.yaml > "$policy_fixture";;
+    esac
+    ./scripts/activate-policy.sh "$policy_fixture"
+    test "$(docker inspect -f '{{.State.StartedAt}}' "$app_id")" = "$history_started"
+    test "$(docker inspect -f '{{.State.StartedAt}}' "$peer_id")" = "$history_peer_started"
+    sed "s/sequence-large\"/sequence-live-$sequence_setting\"/" "$flow_tmp/sequence-large.json" > "$flow_tmp/sequence-live.json"
+    test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/sequence-live.json" "$flow_tmp/sequence-live-response.json")" = 201
+    sequence_status=NO_MATCH
+    if [ "$sequence_setting" = disabled ]; then sequence_status=DISABLED; fi
+    compose exec -T db psql -U postgres -d fraud -Atc "SELECT status FROM fraud.rule_results WHERE scope='local-demo' AND event_id='sequence-live-$sequence_setting' AND rule_id='SMALL_PAYMENT_BURST_THEN_LARGE'" | grep -qx "$sequence_status"
+    test "$(api_request "$peer_base" POST /api/v1/transactions "$flow_tmp/sequence-large.json" "$flow_tmp/sequence-replay.json")" = 200
+    cmp -s "$flow_tmp/sequence-large-response.json" "$flow_tmp/sequence-replay.json"
+done
 principal_hash=$(printf local-demo | openssl dgst -sha256 | awk '{print $NF}')
 quota_key="fraud:quota:$principal_hash:READ"
 quota_time=$(( $(date +%s) * 1000 + 60000 ))
@@ -207,9 +240,9 @@ grep -Eq '"decision"[[:space:]]*:[[:space:]]*"CLEAR"' "$flow_tmp/live-response.j
 grep -Eq "\"policyHash\"[[:space:]]*:[[:space:]]*\"$active_hash\"" "$flow_tmp/live-response.json"
 compose run --rm --no-deps policy-seed
 test "$(head_hash)" = "$active_hash"
-sed '/^  smallPaymentBurstThenLarge:/,$s/enabled: false/enabled: true/' config/policy.example.yaml > "$policy_fixture"
+sed 's/smallPaymentBurstThenLarge:/unknownRule:/' config/policy.example.yaml > "$policy_fixture"
 if ./scripts/activate-policy.sh "$policy_fixture"; then
-    echo 'Unavailable rule unexpectedly activated' >&2
+    echo 'Unknown rule unexpectedly activated' >&2
     exit 1
 fi
 test "$(head_hash)" = "$active_hash"
@@ -230,19 +263,21 @@ expect /health/ready 503
 expect /health/live 200
 compose start db
 ready
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 6
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 7
 compose stop app
 compose logs app | grep -q 'Graceful shutdown complete'
 compose up -d --no-build
 ready
 # Re-running the real migration entrypoint must preserve the installed schema.
 compose run --rm --no-deps migrate
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 6
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 7
 test "$(head_hash)" = "$active_hash"
 test "$(api_request "$base" GET /api/v1/transactions/smoke-race /dev/null "$flow_tmp/restarted.json")" = 200
 cmp -s "$flow_tmp/first.json" "$flow_tmp/restarted.json"
 test "$(api_request "$base" GET /api/v1/transactions/travel-jhb /dev/null "$flow_tmp/travel-restarted.json")" = 200
 cmp -s "$flow_tmp/travel-jhb-response.json" "$flow_tmp/travel-restarted.json"
+test "$(api_request "$base" GET /api/v1/transactions/sequence-large /dev/null "$flow_tmp/sequence-restarted.json")" = 200
+cmp -s "$flow_tmp/sequence-large-response.json" "$flow_tmp/sequence-restarted.json"
 # Documentation exposure is a startup setting; disabling it leaves API guards intact.
 compose stop app
 compose rm -f app
@@ -294,4 +329,4 @@ if compose -f compose.yaml -f "$override" up -d --no-build app; then
     exit 1
 fi
 test -z "$(compose ps --status running -q app)"
-echo 'Runtime, live-policy, protected-ingress, transactional-evaluation historical-rule, impossible-travel and Swagger smoke checks passed.'
+echo 'Runtime, live-policy, protected-ingress, transactional-evaluation, historical-rule, impossible-travel, payment-sequence and Swagger smoke checks passed.'

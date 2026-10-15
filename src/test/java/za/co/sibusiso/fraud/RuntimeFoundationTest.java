@@ -93,12 +93,12 @@ class RuntimeFoundationTest {
 
     @Test
     void schemaMismatchPreventsReadiness() throws Exception {
-        changeSchemaVersion(99, 6);
+        changeSchemaVersion(99, 7);
         try {
             assertResponse("/health/ready", 503, "{\"status\":\"DOWN\"}");
             assertResponse("/health/live", 200, "{\"status\":\"UP\"}");
         } finally {
-            changeSchemaVersion(6, 99);
+            changeSchemaVersion(7, 99);
         }
     }
 
@@ -196,9 +196,9 @@ class RuntimeFoundationTest {
     }
 
     @Test
-    void enablingAnUnavailableRuleDirectlyInDatabaseClosesReadinessWithoutCachedFallback() throws Exception {
+    void aPolicyAboveTheLocationSafetyCeilingClosesReadinessWithoutCachedFallback() throws Exception {
         String original=policyText();String previous=policies.current().policyHash();
-        String incompatible=original.replace("smallPaymentBurstThenLarge:\n    enabled: false","smallPaymentBurstThenLarge:\n    enabled: true");
+        String incompatible=original.replace("maxCandidates: 500","maxCandidates: "+(limits.api().maxLocationCandidatesPerEvaluation()+1));
         try {
             activate(policyHash(incompatible),incompatible,false);
             assertThatThrownBy(policies::current).isInstanceOf(za.co.sibusiso.fraud.policy.PolicyUnavailableException.class);

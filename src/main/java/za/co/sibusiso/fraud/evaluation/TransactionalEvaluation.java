@@ -62,7 +62,11 @@ public class TransactionalEvaluation implements EvaluationWriter {
         for (var query : engine.locationQueries(event, policy)) {
             locations.put(query, sql(budget, () -> store.locations(caller.scope(), event.customerId(), query, state.sequence())));
         }
-        var outcome=engine.evaluate(event,policy,new FraudRule.Context(accepted,state.sequence(),new HistoryFacts(facts,locations)),limits.api());
+        var smallPayments = new LinkedHashMap<SmallPaymentsQuery, SmallPaymentsHistory>();
+        for (var query : engine.smallPaymentsQueries(event, policy)) {
+            smallPayments.put(query, sql(budget, () -> store.smallPayments(caller.scope(), event.customerId(), query, state.sequence())));
+        }
+        var outcome=engine.evaluate(event,policy,new FraudRule.Context(accepted,state.sequence(),new HistoryFacts(facts,locations,smallPayments)),limits.api());
         budget.remaining();
         Instant evaluated=sql(budget,store::databaseTime);
         Instant evaluatedAt=evaluated.isBefore(accepted)?accepted:evaluated;

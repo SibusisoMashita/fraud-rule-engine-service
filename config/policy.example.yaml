@@ -29,7 +29,7 @@ rules:
     trustedSources: [VERIFIED_ATM_TERMINAL, VERIFIED_CARD_PRESENT_TERMINAL]
     eligibleChannels: [ATM, CARD_PRESENT]
   smallPaymentBurstThenLarge:
-    enabled: false
+    enabled: true
     windowSeconds: 900
     minSmallPayments: 3
     smallPaymentMaximum: {ZAR: "50.00"}

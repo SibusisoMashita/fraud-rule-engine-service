@@ -90,25 +90,25 @@ Tomcat worker/connection/backlog/header bounds and idle timeouts, bounded JSON r
 
 Runtime has SELECT/INSERT on immutable transactions, evaluations, rule results and instrument owners. Only customer-state acceptance time/sequence can be updated. Deferred event/evaluation and result-completeness constraints prevent partial committed records. Customer locks serialize processing within `(scope,customerId)`; separate customers can proceed independently. Producer identity, source-permission revision and admitted source snapshot are stored without credentials. Policy activation never rewrites evaluations.
 
-High amount, velocity, cumulative spend and impossible travel have execution implementations in this build and are enabled in the sample. The small-payment sequence remains disabled. Activation rejects enabling an unavailable rule; bypassing the validator through raw SQL closes readiness and new-event selection until a compatible policy is restored. Existing results remain immutable.
+All five rules have execution implementations in this build and are enabled in the sample. Activation rejects enabling an unavailable rule; bypassing the validator through raw SQL closes readiness and new-event selection until a compatible policy is restored. Existing results remain immutable.
 
-For an existing Stage 3 volume, build the new image, prepare a working copy of the active policy that preserves its business thresholds/currencies while disabling unavailable implementations, activate that copy, then recreate the stack. For the unchanged local sample, the sequence is:
+Existing installations retain their active policy while upgrading. Prepare a compatible [startup configuration](../config/service.example.yaml), including the travel candidate safety ceiling and documentation toggle. Drain ingestion before applying migrations; this build requires schema marker 7, so older images need a coordinated release. For local Compose:
 
 ```sh
 docker compose build app
-./scripts/activate-policy.sh config/policy.example.yaml
+docker compose stop app
 docker compose up -d --no-build --wait --wait-timeout 120
 ```
 
-Use the active-policy working copy instead of the sample when settings have been customized. This is an explicit configuration activation, not a migration that silently changes business rules. Flyway V4 creates evaluation storage; V5 adds receipt-history covering indexes; V6 adds the partial physical instrument/event-time index. These preserve existing policy/identity data. Fresh startup seeds the compatible sample automatically.
+Flyway applies only pending migrations and preserves evaluations, identities and policy history. V7 adds the customer/currency/event-time covering index using normal PostgreSQL locking; schedule index creation for a large existing dataset. Keep the data volume and applied migration history. Fresh startup seeds the compatible sample only when no active policy exists.
 
-An existing Stage 4 installation can keep its high-amount-only policy unchanged. To enable velocity/cumulative spend, activate a working copy with their enabled states set to true while preserving the business windows, limits, currencies and thresholds. Recreating the app or changing the seed file does not activate it. V5 builds indexes with normal PostgreSQL locking; schedule migrations before admitting traffic for a large existing dataset.
-
-An existing Stage 5 installation can keep its three-rule policy while upgrading. Build the image and recreate the stack to apply V6, then explicitly activate a copy of the active policy with `impossibleTravel.enabled: true`, preserving its other business values. Startup settings now require `api.maxLocationCandidatesPerEvaluation` and `api.documentationEnabled`; use a compatible limits file. V6 also uses normal index-building locks: drain ingestion and plan the migration window for an existing large dataset. Old builds require a different schema marker, so this is a coordinated upgrade.
+After upgrading, explicitly activate a validated working copy of the active policy to enable additional rules. Preserve its business values and change only the intended enabled states; for the new sequence rule, set `smallPaymentBurstThenLarge.enabled: true`. Recreating the app or editing the seed file does not activate business changes. The activation procedure is in the business-policy section above.
 
 The live travel candidate cap must not exceed the startup infrastructure ceiling. Activation and runtime loading reject incompatible policies; increasing business limits above that ceiling first requires a deliberate infrastructure release. Speed, distance, allowance, comparison age, accuracy, source/channel filters and enabled state otherwise take effect without app restart. Every new evaluation uses one captured policy; old results remain immutable.
 
 Swagger is available at `/swagger-ui/index.html` with the local sample; `/openapi.yaml` is the packaged contract. `api.documentationEnabled: false` removes public documentation access after restart. The application serves local pinned assets and does not persist API-key authorization or call a remote validator. API routes keep their ordinary security and quotas. No API key is embedded in the page or mounted into the application container.
+
+Sequence window, minimum small-payment count, both per-currency amount thresholds and enabled state activate without app restart. The large threshold must exceed the small maximum for every supported currency. A newly evaluated large payment sees only already committed, strictly earlier event-time small payments through its customer watermark. Later deliveries do not revise an existing result; retrieve/replay returns the original evidence. No broker or retrospective evaluation job is introduced.
 
 A POST success contains the original policy hash, evaluator artifact identity, accepted/evaluated times, preceding customer watermark and all configured results. Equality at the high-amount threshold is a nonmatch. Thresholds, currencies, windows and toggles are read from database policy, with no Java business defaults. Disabled results are explicit; an all-disabled policy remains invalid.
 
@@ -119,7 +119,7 @@ Rule failures and work-budget expiry before commit roll back all records. Comple
 | Probe | Success | Failure | Meaning |
 | --- | --- | --- | --- |
 | `GET /health/live` | 200 `{"status":"UP"}` | Unreachable during termination | Process can serve HTTP; no shared dependency checks |
-| `GET /health/ready` | 200 `{"status":"UP"}` | 503 `{"status":"DOWN"}` | Schema marker v6, a valid compatible active database policy and authenticated Redis ping succeed |
+| `GET /health/ready` | 200 `{"status":"UP"}` | 503 `{"status":"DOWN"}` | Schema marker v7, a valid compatible active database policy and authenticated Redis ping succeed |
 
 Probes expose no dependency names or diagnostics. Readiness verifies policy compatibility but does not authorize business traffic. Transaction POST and event GET enforce admission and execute the implemented flow. List/policy-inspection handlers remain `503 FEATURE_UNAVAILABLE`. Default login, diagnostic and unknown routes remain denied. Health routes belong on a restricted operational network when deployed externally.
 

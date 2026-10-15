@@ -56,6 +56,22 @@ public class JdbcTransactionStore implements TransactionStore {
         jdbc.update("INSERT INTO fraud.instrument_owners(scope,instrument_id,customer_id) VALUES (?,?,?) ON CONFLICT DO NOTHING", scope,instrumentId,customerId);
         return jdbc.queryForObject("SELECT customer_id FROM fraud.instrument_owners WHERE scope=? AND instrument_id=?",String.class,scope,instrumentId);
     }
+    static String smallPaymentsSql() {
+        return """
+                SELECT count(*) AS payment_count, coalesce(sum(amount),0) AS total FROM fraud.transactions
+                WHERE scope=? AND customer_id=? AND currency=? AND occurred_at>? AND occurred_at<?
+                  AND customer_sequence<=? AND amount<=?
+                """;
+    }
+    static Object[] smallPaymentsArguments(String scope, String customerId, SmallPaymentsQuery query, long highWatermark) {
+        return new Object[]{scope,customerId,query.currency(),utc(query.occurredAt().minusSeconds(query.windowSeconds())),
+                utc(query.occurredAt()),highWatermark,query.maximumAmount()};
+    }
+    @Override public SmallPaymentsHistory smallPayments(String scope, String customerId, SmallPaymentsQuery query, long highWatermark) {
+        return jdbc.queryForObject(smallPaymentsSql(), (row,index) -> new SmallPaymentsHistory(row.getLong("payment_count"),row.getBigDecimal("total")),
+                smallPaymentsArguments(scope,customerId,query,highWatermark));
+    }
+
     @Override public LocationCandidates locations(String scope, String customerId, LocationQuery query, long highWatermark) {
         var rows = jdbc.query(locationSql(), (row,index) -> new LocationCandidates.Observation(row.getString("event_id"),
                         row.getObject("occurred_at",OffsetDateTime.class).toInstant(), new TransactionEvent.PhysicalLocation(

@@ -36,7 +36,7 @@ public final class TestDatabase {
             statement.setString(2, policyText);
             statement.executeQuery().close();
         }
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(4);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(5);
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         try (var connection = DriverManager.getConnection(DATABASE.getJdbcUrl(), "fraud_runtime", PASSWORD);
                 var statement = connection.createStatement();

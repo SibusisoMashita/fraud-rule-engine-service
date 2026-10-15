@@ -198,7 +198,7 @@ class ImpossibleTravelEvaluationTest {
     }
     private String activate(String source) {
         var snapshot=new PolicyLoader(new StrictYaml(),RuleRegistry.of(BuiltInRules.definitions(),limits.api().maxRegisteredRules())).read(source);
-        new RuleEngine(List.of(new HighAmountRule(),new TransactionVelocityRule(),new CumulativeSpendRule(),new ImpossibleTravelRule(limits.api().maxLocationCandidatesPerEvaluation())),limits.api().maxEvidenceFactsPerRule()).verify(snapshot);
+        new RuleEngine(List.of(new HighAmountRule(),new TransactionVelocityRule(),new CumulativeSpendRule(),new SmallPaymentBurstRule(),new ImpossibleTravelRule(limits.api().maxLocationCandidatesPerEvaluation())),limits.api().maxEvidenceFactsPerRule()).verify(snapshot);
         return database("fraud_policy_admin").queryForObject("SELECT fraud.activate_policy(?,?,false)",String.class,snapshot.policyHash(),source);
     }
     private JsonNode result(JsonNode evaluation,String id){for(var r:evaluation.get("ruleResults"))if(r.get("ruleId").asString().equals(id))return r;throw new AssertionError("Missing "+id);}

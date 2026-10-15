@@ -39,6 +39,19 @@ public final class RuleEngine {
     private <C extends RuleSettings> void validate(FraudRule<C> rule, RuleSettings settings) {
         rule.validateConfiguration(rule.definition().settingsType().cast(settings));
     }
+    public Set<SmallPaymentsQuery> smallPaymentsQueries(TransactionEvent event, PolicySnapshot policy) {
+        verify(policy);
+        var queries = new LinkedHashSet<SmallPaymentsQuery>();
+        for (var configured : policy.rules().values()) {
+            if (configured.settings().enabled())
+                smallPayments(implementations.get(configured.definition().id()), configured.settings(), event).ifPresent(queries::add);
+        }
+        return Collections.unmodifiableSet(queries);
+    }
+    private <C extends RuleSettings> java.util.Optional<SmallPaymentsQuery> smallPayments(FraudRule<C> rule, RuleSettings settings, TransactionEvent event) {
+        return rule.smallPaymentsQuery(event, rule.definition().settingsType().cast(settings));
+    }
+
     public Set<LocationQuery> locationQueries(TransactionEvent event, PolicySnapshot policy) {
         verify(policy);
         var queries = new LinkedHashSet<LocationQuery>();
