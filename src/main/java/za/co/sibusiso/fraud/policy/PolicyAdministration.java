@@ -16,7 +16,7 @@ import za.co.sibusiso.fraud.domain.ContractChecks;
 public class PolicyAdministration {
     @Bean
     CommandLineRunner administerPolicy(JdbcTemplate jdbc, PolicyLoader loader, StrictYaml yaml, Environment environment,
-            ConfigurableApplicationContext context) {
+            ConfigurableApplicationContext context, za.co.sibusiso.fraud.evaluation.RuleEngine engine) {
         return args -> {
             String command = environment.getRequiredProperty("fraud.policy-command");
             ContractChecks.require(command.equals("seed") || command.equals("activate"), "Unknown policy command");
@@ -30,6 +30,7 @@ public class PolicyAdministration {
             var resource = StrictYaml.localResource(context, environment.getRequiredProperty("fraud.policy-input"));
             String text = yaml.readText(resource);
             var snapshot = loader.read(text);
+            engine.verify(snapshot);
             String activated = jdbc.queryForObject("SELECT fraud.activate_policy(?, ?, ?)", String.class,
                     snapshot.policyHash(), text, seed);
             System.out.println("Active policy: " + activated);

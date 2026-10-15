@@ -1,0 +1,15 @@
+package za.co.sibusiso.fraud.evaluation;
+
+import java.util.function.LongSupplier;
+import za.co.sibusiso.fraud.domain.TransactionEvent;
+import za.co.sibusiso.fraud.ingress.Caller;
+
+public interface EvaluationWriter {
+    final class Attempt {
+        private boolean commitReady;
+        public void readyToCommit() { commitReady = true; }
+        public boolean isCommitReady() { return commitReady; }
+    }
+    record Submission(boolean created, TransactionStore.Stored stored) { }
+    Submission write(Caller caller, TransactionEvent event, String requestHash, LongSupplier remainingMillis, Attempt attempt) throws Exception;
+}

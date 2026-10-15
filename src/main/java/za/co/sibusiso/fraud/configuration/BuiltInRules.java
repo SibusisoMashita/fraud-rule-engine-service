@@ -5,7 +5,7 @@ import za.co.sibusiso.fraud.domain.ContractChecks;
 import za.co.sibusiso.fraud.domain.RuleId;
 import za.co.sibusiso.fraud.configuration.BuiltInRuleSettings.*;
 
-/** Configuration/algorithm identities only; fraud evaluation arrives in later milestones. */
+/** Stable configuration and algorithm identities, independent of execution implementations. */
 public final class BuiltInRules {
     private BuiltInRules() { }
 

@@ -9,6 +9,7 @@ export COMPOSE_PROJECT_NAME="fraud-smoke-$$"
 export APP_PORT="${SMOKE_PORT:-18080}"
 base="http://127.0.0.1:$APP_PORT"
 peer_id=
+flow_tmp=$(mktemp -d)
 override=$(mktemp)
 response_fixture=$(mktemp)
 policy_fixture="secrets/$COMPOSE_PROJECT_NAME-policy.yaml"
@@ -19,6 +20,7 @@ cleanup() {
     if [ "$result" -ne 0 ]; then compose logs --tail=80 || true; fi
     if [ -n "$peer_id" ]; then docker rm -f "$peer_id" >/dev/null || true; fi
     compose down --volumes --remove-orphans || result=1
+    rm -rf "$flow_tmp"
     rm -f "$override" "$response_fixture" "$policy_fixture" "$limits_fixture"
     exit "$result"
 }
@@ -80,6 +82,36 @@ until curl -fsS --max-time 5 "$peer_base/health/ready" >/dev/null 2>&1; do
     sleep 1
 done
 auth_expect "$peer_base/api/v1/evaluations" 503
+api_request() {
+    api_origin=$1 api_method=$2 api_path=$3 api_input=$4 api_output=$5
+    if [ "$api_method" = POST ]; then
+        printf 'header = "X-API-Key: %s"\n' "$(cat secrets/local-api-key)" |
+            curl --config - -sS --max-time 15 -H 'Content-Type: application/json' --data-binary "@$api_input" -o "$api_output" -w '%{http_code}' "$api_origin$api_path"
+    else
+        printf 'header = "X-API-Key: %s"\n' "$(cat secrets/local-api-key)" |
+            curl --config - -sS --max-time 5 -o "$api_output" -w '%{http_code}' "$api_origin$api_path"
+    fi
+}
+# Two application processes race on one event; exactly one creates it.
+flow_time=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+printf '{"eventId":"smoke-race","customerId":"smoke-customer","instrumentId":"smoke-card","transactionType":"CARD_PURCHASE","status":"BOOKED","channel":"ECOMMERCE","amount":"25000.01","currency":"ZAR","category":"GROCERIES","occurredAt":"%s"}\n' "$flow_time" > "$flow_tmp/event.json"
+api_request "$base" POST /api/v1/transactions "$flow_tmp/event.json" "$flow_tmp/first.json" > "$flow_tmp/first.status" &
+flow_first_pid=$!
+api_request "$peer_base" POST /api/v1/transactions "$flow_tmp/event.json" "$flow_tmp/second.json" > "$flow_tmp/second.status" &
+flow_second_pid=$!
+wait "$flow_first_pid"
+wait "$flow_second_pid"
+flow_statuses="$(cat "$flow_tmp/first.status") $(cat "$flow_tmp/second.status")"
+case "$flow_statuses" in '201 200'|'200 201') ;; *) echo "Unexpected duplicate outcomes: $flow_statuses" >&2; exit 1;; esac
+cmp -s "$flow_tmp/first.json" "$flow_tmp/second.json"
+grep -Eq '"decision"[[:space:]]*:[[:space:]]*"FLAGGED"' "$flow_tmp/first.json"
+test "$(api_request "$peer_base" GET /api/v1/transactions/smoke-race /dev/null "$flow_tmp/get.json")" = 200
+cmp -s "$flow_tmp/first.json" "$flow_tmp/get.json"
+sed 's/25000.01/25000.02/' "$flow_tmp/event.json" > "$flow_tmp/conflict.json"
+test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/conflict.json" "$flow_tmp/conflict-response.json")" = 409
+compose exec -T db psql -U postgres -d fraud -Atc "SELECT count(*) FROM fraud.transactions WHERE scope='local-demo'; SELECT count(*) FROM fraud.evaluations WHERE scope='local-demo'; SELECT count(*) FROM fraud.rule_results WHERE scope='local-demo'; SELECT customer_sequence FROM fraud.customer_processing_state WHERE scope='local-demo'" > "$flow_tmp/counts"
+printf '1\n1\n5\n1\n' > "$flow_tmp/expected-counts"
+cmp -s "$flow_tmp/counts" "$flow_tmp/expected-counts"
 principal_hash=$(printf local-demo | openssl dgst -sha256 | awk '{print $NF}')
 quota_key="fraud:quota:$principal_hash:READ"
 quota_time=$(( $(date +%s) * 1000 + 60000 ))
@@ -104,7 +136,19 @@ active_hash=$(head_hash)
 test "$initial_hash" != "$active_hash"
 ready
 test "$(docker inspect -f '{{.State.StartedAt}}' "$app_id")" = "$started_at"
+test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/event.json" "$flow_tmp/replay.json")" = 200
+cmp -s "$flow_tmp/first.json" "$flow_tmp/replay.json"
+sed 's/smoke-race/live-policy-event/' "$flow_tmp/event.json" > "$flow_tmp/live.json"
+test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/live.json" "$flow_tmp/live-response.json")" = 201
+grep -Eq '"decision"[[:space:]]*:[[:space:]]*"CLEAR"' "$flow_tmp/live-response.json"
+grep -Eq "\"policyHash\"[[:space:]]*:[[:space:]]*\"$active_hash\"" "$flow_tmp/live-response.json"
 compose run --rm --no-deps policy-seed
+test "$(head_hash)" = "$active_hash"
+sed '/^  transactionVelocity:/,/^  cumulativeSpend:/s/enabled: false/enabled: true/' config/policy.example.yaml > "$policy_fixture"
+if ./scripts/activate-policy.sh "$policy_fixture"; then
+    echo 'Unavailable rule unexpectedly activated' >&2
+    exit 1
+fi
 test "$(head_hash)" = "$active_hash"
 sed 's/enabled: true/enabled: false/g' config/policy.example.yaml > "$policy_fixture"
 if ./scripts/activate-policy.sh "$policy_fixture"; then
@@ -123,15 +167,17 @@ expect /health/ready 503
 expect /health/live 200
 compose start db
 ready
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 3
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 4
 compose stop app
 compose logs app | grep -q 'Graceful shutdown complete'
 compose up -d --no-build
 ready
 # Re-running the real migration entrypoint must preserve the installed schema.
 compose run --rm --no-deps migrate
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 3
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 4
 test "$(head_hash)" = "$active_hash"
+test "$(api_request "$base" GET /api/v1/transactions/smoke-race /dev/null "$flow_tmp/restarted.json")" = 200
+cmp -s "$flow_tmp/first.json" "$flow_tmp/restarted.json"
 # Invalid operational settings must block a new application process.
 compose stop app
 compose rm -f app
@@ -166,4 +212,4 @@ if compose -f compose.yaml -f "$override" up -d --no-build app; then
     exit 1
 fi
 test -z "$(compose ps --status running -q app)"
-echo 'Runtime, live-policy and protected-ingress smoke checks passed.'
+echo 'Runtime, live-policy, protected-ingress and transactional-evaluation smoke checks passed.'

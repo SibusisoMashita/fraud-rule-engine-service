@@ -19,7 +19,7 @@ public final class ApiProblems {
         response.setHeader("Cache-Control", "no-store");
     }
 
-    /** Admission errors precede any financial write, so NOT_ACCEPTED is known here. */
+    /** The coordinator supplies UNKNOWN when a commit/response failure cannot prove nonacceptance. */
     public static void write(HttpServletRequest request, HttpServletResponse response, ApiFailure failure) throws IOException {
         prepare(request, response);
         response.setStatus(failure.status());
@@ -28,6 +28,6 @@ public final class ApiProblems {
         if (failure.retryAfterSeconds() > 0) response.setHeader("Retry-After", Long.toString(failure.retryAfterSeconds()));
         JSON.writeValue(response.getOutputStream(), Map.of("type", "about:blank", "title", HttpStatus.valueOf(failure.status()).getReasonPhrase(),
                 "status", failure.status(), "code", failure.code(), "correlationId", request.getAttribute(CORRELATION),
-                "retryable", failure.retryAfterSeconds() > 0, "outcome", "NOT_ACCEPTED"));
+                "retryable", failure.retryAfterSeconds() > 0, "outcome", failure.outcome()));
     }
 }

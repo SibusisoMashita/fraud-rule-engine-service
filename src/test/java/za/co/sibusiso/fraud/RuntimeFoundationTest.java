@@ -93,12 +93,12 @@ class RuntimeFoundationTest {
 
     @Test
     void schemaMismatchPreventsReadiness() throws Exception {
-        changeSchemaVersion(99, 3);
+        changeSchemaVersion(99, 4);
         try {
             assertResponse("/health/ready", 503, "{\"status\":\"DOWN\"}");
             assertResponse("/health/live", 200, "{\"status\":\"UP\"}");
         } finally {
-            changeSchemaVersion(3, 99);
+            changeSchemaVersion(4, 99);
         }
     }
 
@@ -193,6 +193,18 @@ class RuntimeFoundationTest {
             assertResponse("/health/live", 200, "{\"status\":\"UP\"}");
         } finally { activate(before, original, false); }
         assertResponse("/health/ready", 200, "{\"status\":\"UP\"}");
+    }
+
+    @Test
+    void enablingAnUnavailableRuleDirectlyInDatabaseClosesReadinessWithoutCachedFallback() throws Exception {
+        String original=policyText();String previous=policies.current().policyHash();
+        String incompatible=original.replace("transactionVelocity:\n    enabled: false","transactionVelocity:\n    enabled: true");
+        try {
+            activate(policyHash(incompatible),incompatible,false);
+            assertThatThrownBy(policies::current).isInstanceOf(za.co.sibusiso.fraud.policy.PolicyUnavailableException.class);
+            assertResponse("/health/ready",503,"{\"status\":\"DOWN\"}");assertResponse("/health/live",200,"{\"status\":\"UP\"}");
+        }finally{activate(previous,original,false);}
+        assertResponse("/health/ready",200,"{\"status\":\"UP\"}");
     }
 
     private static String policyText() {

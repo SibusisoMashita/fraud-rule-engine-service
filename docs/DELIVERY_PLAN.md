@@ -1,6 +1,6 @@
 # Delivery plan
 
-Stages 0–3 are implemented. Protected ingress extends the typed contracts and live policy foundation with database-backed identity, permissions, shared quotas and bounded transaction decoding. Admitted requests explicitly remain unaccepted until fraud evaluation/persistence is implemented. The next stage is the first transactional evaluation flow.
+Stages 0–4 are implemented. The first flow commits a scoped event, its high-amount evaluation, every configured rule result and customer state together. Database policy drives thresholds and enabled states; unsupported implementations cannot be activated. POST replay/conflict and scoped event GET are available. The next stage adds velocity and cumulative-spend history.
 
 ## Milestones
 

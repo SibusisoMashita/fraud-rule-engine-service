@@ -80,6 +80,7 @@ public record ServiceLimits(int schemaVersion, Api api, Operations operations) {
 
     public Map<String, Object> runtimeProperties() {
         var result = new java.util.LinkedHashMap<String, Object>();
+        result.put("fraud.transaction-timeout-seconds", seconds(Math.addExact(operations.maxProcessingMillis(), operations.commitReserveMillis())));
         result.put("spring.datasource.hikari.maximum-pool-size", operations.dbPoolMaxConnectionsPerReplica());
         result.put("spring.datasource.hikari.connection-timeout", operations.poolAcquireTimeoutMillis());
         result.put("spring.datasource.hikari.validation-timeout", operations.poolAcquireTimeoutMillis() / 2);
@@ -87,7 +88,7 @@ public record ServiceLimits(int schemaVersion, Api api, Operations operations) {
         result.put("spring.datasource.hikari.connection-init-sql", "SET statement_timeout = '"
                 + operations.statementTimeoutMillis() + "ms'; SET lock_timeout = '" + operations.lockTimeoutMillis() + "ms'");
         result.put("spring.datasource.hikari.data-source-properties.connectTimeout", seconds(operations.poolAcquireTimeoutMillis()));
-        result.put("spring.datasource.hikari.data-source-properties.socketTimeout", seconds(operations.statementTimeoutMillis()));
+        result.put("spring.datasource.hikari.data-source-properties.socketTimeout", seconds(Math.max(operations.statementTimeoutMillis(), operations.commitReserveMillis())));
         result.put("spring.data.redis.connect-timeout", operations.redisTimeoutMillis() + "ms");
         result.put("spring.data.redis.timeout", operations.redisTimeoutMillis() + "ms");
         result.put("spring.lifecycle.timeout-per-shutdown-phase", operations.gracefulShutdownSeconds() + "s");

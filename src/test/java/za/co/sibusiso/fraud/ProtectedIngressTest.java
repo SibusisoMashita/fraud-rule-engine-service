@@ -33,8 +33,8 @@ class ProtectedIngressTest {
     private static final String BODY = """
             {"eventId":"evt-1","customerId":"customer-1","instrumentId":"card-1","transactionType":"CARD_PURCHASE",
              "status":"BOOKED","channel":"ECOMMERCE","amount":"1.00","currency":"ZAR","category":"GROCERIES",
-             "occurredAt":"2026-10-15T10:00:00Z"}
-            """;
+             "occurredAt":"%s"}
+            """.formatted(java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
     @Container static final PostgreSQLContainer DATABASE = new PostgreSQLContainer(DockerImageName.parse(
             "postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3").asCompatibleSubstituteFor("postgres"));
     @Container static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse(
@@ -106,12 +106,12 @@ class ProtectedIngressTest {
         long version = authenticator.authenticate(first.key()).permissionVersion();
         admin().update("UPDATE fraud.api_principals SET roles=ARRAY['INGEST','POLICY'] WHERE principal_id=?",first.principal());
         assertThat(authenticator.authenticate(first.key()).permissionVersion()).isEqualTo(version+1);
-        assertStatus(call("POST","/api/v1/transactions",first.key(),BODY),503,"FEATURE_UNAVAILABLE");
+        assertAccepted(call("POST","/api/v1/transactions",first.key(),BODY));
         assertStatus(call("GET","/api/v1/evaluations",first.key(),null),403,"FORBIDDEN");
         assertStatus(call("GET","/api/v1/rules",first.key(),null),503,"FEATURE_UNAVAILABLE");
         var forged = http.send(request("POST","/api/v1/transactions",first.key(),BODY).header("X-Scope",second.scope())
                 .header("X-Forwarded-For","127.0.0.1").build(),HttpResponse.BodyHandlers.ofString());
-        assertStatus(forged,503,"FEATURE_UNAVAILABLE");
+        assertAccepted(forged);
         assertThat(authenticator.authenticate(first.key()).scope()).isEqualTo(first.scope());
         admin().update("UPDATE fraud.api_principals SET enabled=false WHERE principal_id=?",first.principal());
         assertStatus(call("POST","/api/v1/transactions",first.key(),BODY),401,"INVALID_CREDENTIAL");
@@ -121,7 +121,7 @@ class ProtectedIngressTest {
         String physical = BODY.replace("ECOMMERCE","CARD_PRESENT").replace("\"amount\":", "\"physicalLocation\":{\"latitude\":-33.9249,\"longitude\":18.4241,\"accuracyKm\":0.1,\"source\":\"VERIFIED_CARD_PRESENT_TERMINAL\",\"city\":\"Cape Town\"},\"amount\":");
         assertStatus(call("POST","/api/v1/transactions",identity.key(),physical),403,"LOCATION_SOURCE_FORBIDDEN");
         admin().update("UPDATE fraud.api_principals SET location_sources=ARRAY['VERIFIED_CARD_PRESENT_TERMINAL'] WHERE principal_id=?",identity.principal());
-        assertStatus(call("POST","/api/v1/transactions",identity.key(),physical),503,"FEATURE_UNAVAILABLE");
+        assertAccepted(call("POST","/api/v1/transactions",identity.key(),physical));
         admin().update("UPDATE fraud.api_principals SET location_sources=ARRAY[]::text[] WHERE principal_id=?",identity.principal());
         assertStatus(call("POST","/api/v1/transactions",identity.key(),physical),403,"LOCATION_SOURCE_FORBIDDEN");
         assertStatus(call("POST","/api/v1/transactions",identity.key(),physical.replace("\"channel\":\"CARD_PRESENT\"","\"channel\":\"ECOMMERCE\"")),422,"INVALID_TRANSACTION");
@@ -140,7 +140,7 @@ class ProtectedIngressTest {
         assertStatus(call("POST","/api/v1/transactions?scope=other",identity.key(),BODY),400,"UNSUPPORTED_QUERY");
         assertStatus(call("GET","/actuator/env",identity.key(),null),403,"FORBIDDEN");
         assertThat(call("GET","/health/live",null,null).statusCode()).isEqualTo(200);
-        assertThat(runtime.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema='fraud' AND table_name='transactions'",Integer.class)).isZero();
+        assertThat(runtime.queryForObject("SELECT count(*) FROM fraud.transactions WHERE scope=?",Integer.class,identity.scope())).isZero();
     }
     @Test void duplicateMediaHeadersCannotBypassContentRestrictions() throws Exception {
         var identity = identity("{INGEST}", "{}");
@@ -164,7 +164,7 @@ class ProtectedIngressTest {
         assertStatus(call("POST", "/api/v1/transactions", first.key(), BODY), 429, "RATE_LIMITED");
         assertStatus(call("GET", "/api/v1/evaluations", first.key(), null), 503, "FEATURE_UNAVAILABLE");
         assertStatus(call("GET", "/api/v1/rules", first.key(), null), 503, "FEATURE_UNAVAILABLE");
-        assertStatus(call("POST", "/api/v1/transactions", second.key(), BODY), 503, "FEATURE_UNAVAILABLE");
+        assertAccepted(call("POST", "/api/v1/transactions", second.key(), BODY));
         var forged = http.send(request("POST", "/api/v1/transactions", first.key(), BODY)
                 .header("X-Principal-ID", second.principal()).header("X-Scope", second.scope())
                 .header("X-Forwarded-For", "192.0.2.1").build(), HttpResponse.BodyHandlers.ofString());
@@ -234,18 +234,18 @@ class ProtectedIngressTest {
         try { assertStatus(call("POST","/api/v1/transactions",identity.key(),BODY),503,"LIMITER_UNAVAILABLE");
             assertThat(call("GET","/health/live",null,null).statusCode()).isEqualTo(200);
         } finally { docker.unpauseContainerCmd(REDIS.getContainerId()).exec(); }
-        assertStatus(call("POST","/api/v1/transactions",identity.key(),BODY),503,"FEATURE_UNAVAILABLE");
+        assertAccepted(call("POST","/api/v1/transactions",identity.key(),BODY));
         var dbDocker=DATABASE.getDockerClient();dbDocker.pauseContainerCmd(DATABASE.getContainerId()).exec();
         try { assertStatus(call("POST","/api/v1/transactions",identity.key(),BODY),503,"DEPENDENCY_UNAVAILABLE"); }
         finally { dbDocker.unpauseContainerCmd(DATABASE.getContainerId()).exec(); }
-        assertStatus(call("POST","/api/v1/transactions",identity.key(),BODY),503,"FEATURE_UNAVAILABLE");
+        assertAccepted(call("POST","/api/v1/transactions",identity.key(),BODY));
     }
     @Test void redisMemoryExhaustionRejectsTrafficAndRecoversWithoutRestart() throws Exception {
         var identity=identity("{INGEST}","{}");
         redis.execute(connection -> { connection.serverCommands().setConfig("maxmemory","1"); return true; }, true);
         try { assertStatus(call("POST","/api/v1/transactions",identity.key(),BODY),503,"LIMITER_UNAVAILABLE"); }
         finally { redis.execute(connection -> { connection.serverCommands().setConfig("maxmemory","0"); return true; }, true); }
-        assertStatus(call("POST","/api/v1/transactions",identity.key(),BODY),503,"FEATURE_UNAVAILABLE");
+        assertAccepted(call("POST","/api/v1/transactions",identity.key(),BODY));
     }
     @Test void databaseGuardsIdentityScopeAndAuditWithSeparateRuntimePrivileges() {
         var identity=identity("{READ}","{}");
@@ -267,6 +267,11 @@ class ProtectedIngressTest {
         return http.send(request(method,path,key,body).build(),HttpResponse.BodyHandlers.ofString());
     }
     private URI uri(String path) {return URI.create("http://localhost:"+port+path);}
+    private void assertAccepted(HttpResponse<String> response) {
+        assertThat(response.statusCode()).as(response.body()).isIn(200,201);
+        var body=JsonMapper.builder().build().readTree(response.body());
+        assertThat(body.get("evaluation").get("decision").asString()).isEqualTo("CLEAR");
+    }
     private void assertStatus(HttpResponse<String> response,int status,String code) {
         assertThat(response.statusCode()).as(response.body()).isEqualTo(status);
         assertThat(response.headers().firstValue("content-type")).hasValueSatisfying(type->assertThat(type).startsWith("application/problem+json"));

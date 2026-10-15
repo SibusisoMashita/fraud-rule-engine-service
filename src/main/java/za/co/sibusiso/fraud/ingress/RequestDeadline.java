@@ -7,6 +7,10 @@ public final class RequestDeadline {
     public static final String ATTRIBUTE = RequestDeadline.class.getName();
     private final long expiresAt;
     public RequestDeadline(int millis) { expiresAt = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis); }
+    public long remainingMillis() {
+        long nanos = expiresAt - System.nanoTime();
+        return nanos <= 0 ? 0 : Math.max(1, TimeUnit.NANOSECONDS.toMillis(nanos));
+    }
     public void check() {
         if (System.nanoTime() - expiresAt >= 0) throw new ApiFailure(503, "DEADLINE_EXCEEDED", 1);
     }

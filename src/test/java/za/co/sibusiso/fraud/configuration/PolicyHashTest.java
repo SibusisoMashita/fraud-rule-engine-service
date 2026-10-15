@@ -45,7 +45,7 @@ class PolicyHashTest {
         var loader = loader();
         String original = loader.read(POLICY).policyHash();
         assertThat(loader.read(POLICY.replace("25000.00", "25000.01")).policyHash()).isNotEqualTo(original);
-        assertThat(loader.read(POLICY.replaceFirst("enabled: true", "enabled: false")).policyHash()).isNotEqualTo(original);
+        assertThat(loader.read(POLICY.replaceFirst("enabled: false", "enabled: true")).policyHash()).isNotEqualTo(original);
         var definitions = new ArrayList<>(BuiltInRules.definitions());
         var high = BuiltInRules.highAmount();
         definitions.set(0, new RuleDefinition<>(high.configurationKey(), high.id(), "2", high.settingsType(), high.validator()));

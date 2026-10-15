@@ -14,6 +14,9 @@ import za.co.sibusiso.fraud.configuration.*;
 import static org.assertj.core.api.Assertions.*;
 
 class ActivePolicyProviderTest {
+    private final za.co.sibusiso.fraud.evaluation.RuleEngine engine = new za.co.sibusiso.fraud.evaluation.RuleEngine(
+            java.util.List.of(new za.co.sibusiso.fraud.evaluation.HighAmountRule()),
+            new StrictYaml().read(new ClassPathResource("config/service.example.yaml"), ServiceLimits.class).api().maxEvidenceFactsPerRule());
     private final StrictYaml yaml = new StrictYaml();
     private final PolicyLoader loader = new PolicyLoader(yaml, RuleRegistry.of(BuiltInRules.definitions(), 64));
     private final String original = yaml.readText(new ClassPathResource("config/policy.example.yaml"));
@@ -22,7 +25,7 @@ class ActivePolicyProviderTest {
     void selectsCommittedDatabaseVersionOnEveryCallWithoutRestartOrPolling() {
         var store = new Store();
         String firstHash = store.publish(1, original);
-        var provider = new ActivePolicyProvider(store, loader);
+        var provider = new ActivePolicyProvider(store, loader, engine::verify);
         var first = provider.current();
         assertThat(provider.current()).isSameAs(first);
         assertThat(store.documentReads).hasValue(1);
@@ -37,7 +40,7 @@ class ActivePolicyProviderTest {
     void unavailableDatabaseOrInvalidNewVersionCannotFallBackToCachedPolicy() {
         var store = new Store();
         String hash = store.publish(1, original);
-        var provider = new ActivePolicyProvider(store, loader);
+        var provider = new ActivePolicyProvider(store, loader, engine::verify);
         provider.current();
         store.unavailable = true;
         assertThatThrownBy(provider::current).isInstanceOf(PolicyUnavailableException.class);
@@ -54,7 +57,7 @@ class ActivePolicyProviderTest {
         var store = new Store();
         store.documents.put("f".repeat(64), original);
         store.reference.set(new ActivePolicyStore.Reference(1, "f".repeat(64)));
-        assertThatThrownBy(new ActivePolicyProvider(store, loader)::current)
+        assertThatThrownBy(new ActivePolicyProvider(store, loader, engine::verify)::current)
                 .isInstanceOf(PolicyUnavailableException.class).rootCause().hasMessageContaining("hash");
     }
 
@@ -79,7 +82,7 @@ class ActivePolicyProviderTest {
                 return store.document(hash);
             }
         };
-        var provider = new ActivePolicyProvider(blocking, loader);
+        var provider = new ActivePolicyProvider(blocking, loader, engine::verify);
         try (var executor = Executors.newSingleThreadExecutor()) {
             var oldCall = executor.submit(provider::current);
             try {

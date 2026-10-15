@@ -11,15 +11,15 @@ rules:
     enabled: true
     thresholds: {ZAR: "25000.00"}
   transactionVelocity:
-    enabled: true
+    enabled: false
     windowSeconds: 600
     maxTransactions: 5
   cumulativeSpend:
-    enabled: true
+    enabled: false
     windowSeconds: 1800
     thresholds: {ZAR: "30000.00"}
   impossibleTravel:
-    enabled: true
+    enabled: false
     maxComparisonAgeSeconds: 86400
     maxCandidates: 500
     maxSpeedKmh: 1000
@@ -29,7 +29,7 @@ rules:
     trustedSources: [VERIFIED_ATM_TERMINAL, VERIFIED_CARD_PRESENT_TERMINAL]
     eligibleChannels: [ATM, CARD_PRESENT]
   smallPaymentBurstThenLarge:
-    enabled: true
+    enabled: false
     windowSeconds: 900
     minSmallPayments: 3
     smallPaymentMaximum: {ZAR: "50.00"}

@@ -152,7 +152,8 @@ class ConfigurationTest {
                     public Reference active() { return new Reference(1, "a".repeat(64)); }
                     public String document(String hash) { return POLICY.replace("schemaVersion: 1", "schemaVersion: 2"); }
                 })
-                .withUserConfiguration(PolicyConfiguration.class, za.co.sibusiso.fraud.policy.PolicyRuntimeConfiguration.class)
+                .withUserConfiguration(PolicyConfiguration.class, za.co.sibusiso.fraud.policy.PolicyRuntimeConfiguration.class,
+                        za.co.sibusiso.fraud.evaluation.EvaluationConfiguration.class)
                 .run(context -> assertThat(context).hasFailed());
     }
 

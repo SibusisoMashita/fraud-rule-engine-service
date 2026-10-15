@@ -29,13 +29,13 @@ docker compose exec -T db psql -U postgres -d fraud -c 'SELECT revision, policy_
 
 The [activation command](../scripts/activate-policy.sh) validates the exact input before invoking that function. An invalid file exits unsuccessfully without changing active policy. Activations serialize on the singleton head row; version insertion, pointer update and audit insertion commit together. Repeating the current hash is a no-op. To roll back a business change, activate its previous compatible policy document; this creates an auditable activation, not a history rewrite. The command uses the deployed image's rule definitions; algorithm changes require a compatible application release.
 
-Every policy selection reads the committed database reference. Parsed immutable versions are cached by hash, with no timer or stale-policy fallback. A selection observes one entire version even if activation overlaps it. Later ingestion will select once inside its processing transaction after the customer lock and record that hash. Ingestion itself is not implemented yet.
+Every policy selection reads the committed database reference. Parsed immutable versions are cached by hash, with no timer or stale-policy fallback. A selection observes one entire version even if activation overlaps it. Ingestion selects once inside its processing transaction after the customer lock and records that hash. Existing identity is resolved before current currency/age eligibility; replays retain their original decision.
 
 Initial Compose startup seeds the example only when no active version exists. Recreating the application or rerunning the seed job preserves business changes. Direct database calls bypass the Java validator: an invalid document or incompatible hash closes readiness until a valid compatible policy is activated. Database loss also closes readiness even with a cached version. No HTTP policy-management endpoint exists at this stage.
 
 ## Infrastructure: validated startup configuration
 
-[Service limits](../config/service.example.yaml) load before runtime pools/listeners are constructed. They supply Hikari pool/acquisition/validation and SQL timeouts, Redis timeouts, HTTP workers/connections/socket backlog, header/discarded-body bounds, connection/keep-alive idle timeout and shutdown grace. The socket backlog must be positive because Tomcat ignores a zero backlog setting. These validated settings take precedence over conflicting framework defaults. Protected ingress enforces the body/parser bounds, nonblocking admission and shared quotas. Pagination, total upload deadlines and transactional request cancellation/commit budgets remain later work. Application admission has no waiting queue; the configured backlog belongs to the connector.
+[Service limits](../config/service.example.yaml) load before runtime pools/listeners are constructed. They supply Hikari pool/acquisition/validation and SQL timeouts, Redis timeouts, HTTP workers/connections/socket backlog, header/discarded-body bounds, connection/keep-alive idle timeout and shutdown grace. The socket backlog must be positive because Tomcat ignores a zero backlog setting. These validated settings take precedence over conflicting framework defaults. Protected ingress enforces the body/parser bounds, nonblocking admission and shared quotas. Pagination, absolute upload deadlines and complete transactional cancellation/resource-release drills remain later work. SQL work has decreasing statement/lock budgets, a separate commit reserve and a derived Spring transaction timeout. Application admission has no waiting queue; the configured backlog belongs to the connector.
 
 For an infrastructure change, update the service limits and recreate the application. If changing container stop grace, set `CONTAINER_STOP_GRACE_SECONDS` to the same value as `operations.containerStopGraceSeconds`; startup rejects a mismatch. Compose resource limits and edge/client settings remain deployment responsibilities. Database URLs and credentials are separate from the policy hash.
 
@@ -77,22 +77,43 @@ The local seed uses `local-demo` with all three roles and both verified physical
 | Input | Unsupported or duplicate media/encoding headers: 415; excess body: 413; malformed/duplicate/deep JSON or invalid shape: 400; invalid static domain facts: 422 |
 | Quota | Stable principal/route bucket shared by replicas and rotated keys; exhaustion: 429 with `Retry-After` |
 | Dependencies/capacity | Admission dependency, quota-script, Redis memory or permit failure: 503 with a retry hint; cached/open access is not used |
-| Business handler | Valid admitted input/query: 503 `FEATURE_UNAVAILABLE`, nonretryable at this stage; no transaction/evaluation is accepted |
+| Transactions | New committed POST: 201; identical replay: 200; changed content or instrument owner: 409; own-scope GET: 200 or masked 404 |
+| Remaining queries | Evaluation-list and rule-inspection handlers remain 503 `FEATURE_UNAVAILABLE` |
 
-Guard errors use `application/problem+json`, a server-generated correlation ID, `Cache-Control: no-store` and `outcome: NOT_ACCEPTED`. They omit request/credential values and dependency diagnostics. This outcome applies before financial work; the later transaction coordinator must distinguish uncertain commit outcomes.
+Errors use `application/problem+json`, a server-generated correlation ID and `Cache-Control: no-store`. Admission and confirmed processing rollback report `NOT_ACCEPTED`; commit/completion uncertainty reports `UNKNOWN`. They omit request/credential values and dependency diagnostics. An uncertain outcome requires scoped GET or replay of the identical ID/payload; a temporary 404 does not prove that another in-flight attempt cannot commit.
 
 Quota settings remain startup infrastructure configuration. Redis uses its own clock, clamps backward movement and caps refill at capacity. Idle state has a bounded expiry. Redis restart, lost state/expiry or a forward clock jump can restore allowance; this is an abuse quota, not a durable financial limit. Redis noeviction/script/ACL/timeout errors reject protected traffic. Readiness PING checks dependency connectivity; protected smoke checks additionally prove the script permissions work.
 
-Tomcat worker/connection/backlog/header bounds and idle timeouts, bounded JSON reads and a nonwaiting admission permit bound resource use. Deadline checks surround admission and follow decoding. Absolute slow-upload deadlines, pre-authentication edge quotas and complete transactional cancellation remain deployment/later acceptance work. Query filter/pagination semantics arrive with the query milestone.
+Tomcat worker/connection/backlog/header bounds and idle timeouts, bounded JSON reads and a nonwaiting admission permit bound resource use. Deadline checks surround admission and follow decoding. Absolute slow-upload deadlines, pre-authentication edge quotas and complete transactional cancellation under network faults remain deployment/later acceptance work. Query filter/pagination semantics arrive with the query milestone.
+
+## Transactional storage and compatible upgrades
+
+Runtime has SELECT/INSERT on immutable transactions, evaluations, rule results and instrument owners. Only customer-state acceptance time/sequence can be updated. Deferred event/evaluation and result-completeness constraints prevent partial committed records. Customer locks serialize processing within `(scope,customerId)`; separate customers can proceed independently. Producer identity, source-permission revision and admitted source snapshot are stored without credentials. Policy activation never rewrites evaluations.
+
+Only high amount has an execution implementation in this build. The sample disables the remaining four rules. Activation rejects enabling an unavailable rule; bypassing the validator through raw SQL closes readiness and new-event selection until a compatible policy is restored. Existing results remain immutable.
+
+For an existing Stage 3 volume, build the new image, prepare a working copy of the active policy that preserves its business thresholds/currencies while disabling unavailable implementations, activate that copy, then recreate the stack. For the unchanged local sample, the sequence is:
+
+```sh
+docker compose build app
+./scripts/activate-policy.sh config/policy.example.yaml
+docker compose up -d --no-build --wait --wait-timeout 120
+```
+
+Use the active-policy working copy instead of the sample when settings have been customized. This is an explicit configuration activation, not a migration that silently changes business rules. Flyway V4 upgrades storage and preserves existing policy/identity data. Fresh startup seeds the compatible sample automatically.
+
+A POST success contains the original policy hash, evaluator artifact identity, accepted/evaluated times, preceding customer watermark and all configured results. Equality at the high-amount threshold is a nonmatch. Thresholds, currencies, windows and toggles are read from database policy, with no Java business defaults. Disabled results are explicit; an all-disabled policy remains invalid.
+
+Rule failures and work-budget expiry before commit roll back all records. Completion failures can be ambiguous even when the server later proves rollback, so the API conservatively returns `UNKNOWN` where commit/cleanup cannot be confirmed. Transport loss after commit can hide a successful response. Retry the identical event, never a replacement ID. Original decisions and provenance remain retrievable after restart or subsequent policy changes. Full process-kill/network/backup recovery drills remain release acceptance work.
 
 ## Probes and diagnosis
 
 | Probe | Success | Failure | Meaning |
 | --- | --- | --- | --- |
 | `GET /health/live` | 200 `{"status":"UP"}` | Unreachable during termination | Process can serve HTTP; no shared dependency checks |
-| `GET /health/ready` | 200 `{"status":"UP"}` | 503 `{"status":"DOWN"}` | Schema marker v3, a valid compatible active database policy and authenticated Redis ping succeed |
+| `GET /health/ready` | 200 `{"status":"UP"}` | 503 `{"status":"DOWN"}` | Schema marker v4, a valid compatible active database policy and authenticated Redis ping succeed |
 
-Probes expose no dependency names or diagnostics. Readiness verifies policy compatibility but does not authorize business traffic. Protected business routes enforce admission and return `503 FEATURE_UNAVAILABLE` after successful admission. Default login, diagnostic and unknown routes remain denied. Health routes belong on a restricted operational network when deployed externally.
+Probes expose no dependency names or diagnostics. Readiness verifies policy compatibility but does not authorize business traffic. Transaction POST and event GET enforce admission and execute the implemented flow. List/policy-inspection handlers remain `503 FEATURE_UNAVAILABLE`. Default login, diagnostic and unknown routes remain denied. Health routes belong on a restricted operational network when deployed externally.
 
 If readiness fails, inspect `docker compose ps -a`, database/Redis health and application logs. PostgreSQL acquisition is bounded to 500 ms, statements to 1.5 seconds, and Redis connections/commands to 250 ms. These are individual dependency limits, not an overall fraud-request deadline. JDBC network reads are bounded to two seconds. Migration statements have a separate 30-second limit and a 35-second network-read budget. Public readiness recovers after dependencies return; liveness stays independent.
 

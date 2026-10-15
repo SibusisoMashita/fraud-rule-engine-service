@@ -9,7 +9,7 @@ import za.co.sibusiso.fraud.configuration.PolicyLoader;
 @Profile("!migrate & !policy-admin")
 public class PolicyRuntimeConfiguration {
     @Bean(initMethod = "verifyActivePolicy")
-    ActivePolicyProvider activePolicyProvider(ActivePolicyStore store, PolicyLoader loader) {
-        return new ActivePolicyProvider(store, loader);
+    ActivePolicyProvider activePolicyProvider(ActivePolicyStore store, PolicyLoader loader, za.co.sibusiso.fraud.evaluation.RuleEngine engine) {
+        return new ActivePolicyProvider(store, loader, engine::verify);
     }
 }
