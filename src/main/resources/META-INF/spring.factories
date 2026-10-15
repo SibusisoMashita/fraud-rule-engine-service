@@ -1,0 +1,1 @@
+org.springframework.context.ApplicationContextInitializer=za.co.sibusiso.fraud.configuration.LimitsInitializer

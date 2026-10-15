@@ -1,6 +1,6 @@
 # Architecture
 
-Target design for v1. The runtime foundation is implemented; fraud processing, protected ingress and policy binding remain planned. Current runtime commands and limitations are in [Operations](OPERATIONS.md). Related specifications: [scope](../README.md), [HTTP contract](../api/openapi.yaml), [fraud rules](RULES.md) and [acceptance criteria](TESTING.md).
+Target design for v1. The runtime, typed contracts and live database policy configuration are implemented; fraud processing and protected ingress remain planned. Current runtime commands and limitations are in [Operations](OPERATIONS.md). Related specifications: [scope](../README.md), [HTTP contract](../api/openapi.yaml), [fraud rules](RULES.md) and [acceptance criteria](TESTING.md).
 
 ## 1. One application with explicit boundaries
 
@@ -12,9 +12,9 @@ Spring JDBC/JdbcClient provides explicit scoped SQL, aggregates and row locks. O
 
 1. Ingress applies transport/parser bounds, authentication, authorization and the shared principal/route quota. Credentials establish scope and allowed location sources.
 2. The fixed v1 request is decoded and decimals/timestamps are canonicalized. Existing `(scope,eventId)` is checked before current new-event age/currency policy applies. Equivalent input returns the stored result; changed content conflicts. Authorization remains current.
-3. A new event passes lifecycle/policy validation before a READ COMMITTED transaction begins. Customer state is inserted if absent, then `(scope,customerId)` is locked with `FOR UPDATE`. Identity is checked again after acquisition. Each transaction holds only one customer lock.
+3. A new event passes static lifecycle validation before a READ COMMITTED transaction begins. Customer state is inserted if absent, then `(scope,customerId)` is locked with `FOR UPDATE`. Identity is checked again after acquisition. Each transaction holds only one customer lock.
 4. The immutable instrument-to-customer mapping is inserted or verified. Database wall time is sampled after lock acquisition; `acceptedAt=max(clock_timestamp(),lastAcceptedAt)` and customerSequence advances. The sampled wall time remains available for drift diagnostics.
-5. One policy snapshot and the preceding customerSequence establish the evaluation contextHighWatermark. Bounded historical facts feed all enabled rules. Event, evaluation, rule results and updated state share one transaction.
+5. Read the active policy reference inside the processing transaction after the customer lock. Validate new-event currency, amount and age eligibility against that captured policy and the sampled database wall time. Use the same snapshot for all rules; the preceding customerSequence establishes the evaluation contextHighWatermark. Bounded historical facts feed all enabled rules. Event, evaluation, rule results and updated state share one transaction.
 6. A successful response follows commit completion. A unique-event race aborts the transaction; winner lookup/comparison occurs in a fresh transaction. Failed transactions have no further queries or automatic write retries.
 
 One committed evaluation per retained scoped event ID depends on stable producer identity and authoritative DB durability. It is not exactly-once network delivery or deduplication of a real payment delivered under different IDs. The guarantee depends on every writer/import using the same lock protocol. READ COMMITTED alone does not serialize history; the customer lock does. Distinct customers proceed concurrently; one hot customer intentionally serializes.
@@ -32,7 +32,8 @@ The producer owns category, economic debit identity and physical evidence proven
 | customer_processing_state | Scoped customer primary key; lastAcceptedAt and sequence updated under its row lock |
 | evaluations | Exactly one per event; policy hash, evaluator build ID, context watermark, decision, coverage and evaluation time |
 | rule_results | Unique(evaluation,ruleId); algorithm version, status/reason and bounded versioned evidence; configured result completeness verified in tests/reconciliation |
-| rulesets | Immutable canonical policy identified by content hash; secrets/operational limits excluded |
+| policy_versions | Immutable policy source identified by canonical content hash; secrets/operational limits excluded |
+| policy_head / policy_activations | Singleton active reference and append-only activation revisions; changed atomically |
 
 Money uses BigDecimal and PostgreSQL numeric(20,4). Currency scale/maxima are bounded by storage; excess precision fails validation before SQL. Sums use unrestricted numeric and remain currency-specific. Database constraints cover NOT NULL, positive/finite/range, type/status/channel, uniqueness and referential integrity.
 
@@ -42,7 +43,13 @@ R2/R3 use acceptance time; R4/R5 use event time over already observed history. T
 
 ## 4. Configuration and API consistency
 
-Immutable [fraud policy](../config/policy.example.yaml) and [operational settings](../config/service.example.yaml) are separate. Startup validation rejects unknown/duplicate fields or rule IDs, invalid relationships, currency gaps, incompatible schema and all-disabled policy. Registry injection discovers implementations; engine code does not switch on rule names. Each evaluation retains policy hash plus algorithm/build identity. Operational tuning does not change the fraud-policy hash.
+Immutable [fraud policy](../config/policy.example.yaml) and [operational settings](../config/service.example.yaml) are separate. Activation/loading validation rejects unknown/duplicate fields or rule IDs, invalid relationships, currency gaps, incompatible schema and all-disabled policy. Registry injection discovers implementations; engine code does not switch on rule names. Each evaluation retains policy hash plus algorithm/build identity. Operational tuning does not change the fraud-policy hash.
+
+Business policy is authoritative in PostgreSQL: immutable policy versions, a singleton active reference and append-only activation history. The configuration identity activates through one serialized database function; runtime has SELECT only. Each selection reads the committed reference and reuses a cached typed version only for that exact hash. There is no polling delay or cached fallback on database/configuration failure. Configuration-only changes need no app restart; captured evaluations keep their original snapshot. Operational limits stay validated startup configuration. [Operations](OPERATIONS.md) defines activation and recovery commands.
+
+Canonicalization v1 hashes UTF-8 `namespace + "\n" + canonicalJson`, using SHA-256. Namespaces are `fraud-policy-v1` and `fraud-request-v1`; the separator is one LF byte. JSON object keys sort by Java String order, without formatting whitespace. Numbers use bounded plain decimal form with trailing zeros removed and zero normalized to `0`; canonical numeric tokens are at most 32 characters. Policy amounts and transaction amounts are normalized decimal strings. Policy source/channel sets sort by enum name. Other arrays retain their defined order. This is a service format, not RFC 8785.
+
+Policy identity includes schema/canonicalization versions, currencies, ingestion eligibility, stable rule IDs, algorithm versions and all typed settings, including disabled rules. It excludes operational settings, source formatting and activation metadata. Request identity includes scope and every admitted transaction field, with UTC instants at at most microsecond precision and absent location represented as null. Text is preserved without trimming, case folding or Unicode normalization. Offset-free, invalid-calendar and sub-microsecond inputs are rejected; UTC years are bounded to 0001–9999. Static request identity is independent of current policy eligibility so retries can be identified first. Independent fixed vectors protect the format from accidental drift.
 
 OpenAPI defines the HTTP contract and its conformance-test baseline. Existing retries bypass current new-event eligibility, not static safety or authorization. Cursor pages are bounded live traversal, not a stable reconciliation snapshot: a concurrent late commit can be missed behind a cursor. Reconciliation uses producer manifests and scoped ID lookups after outstanding work settles. Retrospective re-evaluation/export is deferred; original evaluations stay immutable.
 
@@ -60,7 +67,7 @@ Local Compose exposes only the app on loopback; DB/Redis stay internal. Non-root
 
 Timeout/disconnect/5xx may occur after commit. An ambiguous result is UNKNOWN; recovery uses GET or the same ID/payload after bounded jittered backoff. Even a temporary 404 cannot prove an in-flight first attempt will not commit. A replacement event ID would lose the replay guarantee. A rule bug aborts processing; missing evidence is a normal explicit rule outcome.
 
-Flyway executes once per release with migration identity; application readiness requires compatible schema, valid expected policy and dependencies. Traffic readiness remains closed until protected smoke checks and release audit pass. Policy changes deliberately drain old ingestion, wait for in-flight work, switch one expected hash, smoke and resume. Code-only rolling releases require tested old/new schema/contract compatibility. Image rollback is allowed only on compatible schema; otherwise reviewed forward fix, never blind destructive down-migration.
+Flyway executes once per release with migration identity; application readiness requires compatible schema, valid expected policy and dependencies. Traffic readiness remains closed until protected smoke checks and release audit pass. Business-setting activation commits one new active database hash without an app restart; selections before that commit can complete under their captured version. Code/algorithm or policy-schema changes require a coordinated compatible release, with ingestion drained where old/new builds cannot interpret the same active hash. Code-only rolling releases require tested old/new schema/contract compatibility. Image rollback is allowed only on compatible schema; otherwise reviewed forward fix, never blind destructive down-migration.
 
 The shutdown budget satisfies work deadline < app shutdown grace < container grace. Liveness is independent of shared dependencies. Readiness/routing drains on shutdown; SIGKILL still relies on DB transaction recovery. Observability comprises safe correlation/build/policy records, low-cardinality latency/error/rule/pool/lock/limiter metrics and actionable alerts. The foundation lifecycle and implemented probe boundaries are documented in [Operations](OPERATIONS.md).
 

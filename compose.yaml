@@ -12,8 +12,10 @@ x-app: &app
   cpus: 1
   pids_limit: 128
   environment: &environment
-    DATABASE_URL: jdbc:postgresql://db:5432/fraud?currentSchema=fraud&connectTimeout=1&socketTimeout=2
+    DATABASE_URL: jdbc:postgresql://db:5432/fraud?currentSchema=fraud
     REDIS_HOST: redis
+    CONTAINER_STOP_GRACE_SECONDS: ${CONTAINER_STOP_GRACE_SECONDS:-45}
+    FRAUD_LIMITS_LOCATION: file:/app/config/service.example.yaml
 services:
   db:
     image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
@@ -56,6 +58,22 @@ services:
       interval: 2s
       timeout: 2s
       retries: 30
+  db-bootstrap:
+    image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    user: postgres
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    secrets: [db-admin-password, db-policy-password]
+    volumes:
+      - ./docker/provision-policy-role.sh:/bootstrap.sh:ro
+    entrypoint: [/bin/sh, /bootstrap.sh]
+    depends_on:
+      db: {condition: service_healthy}
+    restart: 'no'
   migrate:
     <<: *app
     environment:
@@ -67,12 +85,30 @@ services:
         target: spring.datasource.password
     depends_on:
       db: {condition: service_healthy}
+      db-bootstrap: {condition: service_completed_successfully}
+    restart: 'no'
+  policy-seed:
+    <<: *app
+    environment:
+      <<: *environment
+      SPRING_PROFILES_ACTIVE: policy-admin
+      FRAUD_POLICY_INPUT: file:/app/config/policy.example.yaml
+    secrets:
+      - source: db-policy-password
+        target: spring.datasource.password
+    volumes:
+      - ./config/policy.example.yaml:/app/config/policy.example.yaml:ro
+      - ./config/service.example.yaml:/app/config/service.example.yaml:ro
+    depends_on:
+      migrate: {condition: service_completed_successfully}
     restart: 'no'
   app:
     <<: *app
     secrets: [spring.datasource.password, spring.data.redis.password]
     ports: ['127.0.0.1:${APP_PORT:-8080}:8080']
-    stop_grace_period: 45s
+    volumes:
+      - ./config/service.example.yaml:/app/config/service.example.yaml:ro
+    stop_grace_period: ${CONTAINER_STOP_GRACE_SECONDS:-45}s
     healthcheck:
       test: [CMD, curl, --fail, --silent, --max-time, '3', http://localhost:8080/health/ready]
       interval: 5s
@@ -80,10 +116,11 @@ services:
       start_period: 20s
       retries: 5
     depends_on:
-      migrate: {condition: service_completed_successfully}
+      policy-seed: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
 secrets:
   db-admin-password: {file: ./secrets/db-admin-password}
+  db-policy-password: {file: ./secrets/db-policy-password}
   db-migration-password: {file: ./secrets/db-migration-password}
   spring.datasource.password: {file: ./secrets/spring.datasource.password}
   spring.data.redis.password: {file: ./secrets/spring.data.redis.password}

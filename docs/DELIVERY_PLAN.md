@@ -1,6 +1,6 @@
 # Delivery plan
 
-Stages 0 and 1 are complete. The Java/Docker foundation has verified migrations, health probes, dependency recovery and graceful shutdown. The next stage is typed configuration and domain contracts. Fraud evaluation and protected API routes remain unimplemented.
+Stages 0–2 are implemented. Typed contracts and versioned database business policy extend the verified runtime foundation. Business-setting activation does not restart the app; infrastructure settings remain validated startup configuration. The next stage is protected ingress. Fraud evaluation remains unimplemented.
 
 ## Milestones
 
@@ -8,7 +8,7 @@ Stages 0 and 1 are complete. The Java/Docker foundation has verified migrations,
 | --- | --- | --- |
 | 0. Design foundation | Service scope, architecture, rule specifications, draft API and configuration | Consistent contracts, valid document links and schema examples |
 | 1. Runtime foundation | Java/Maven application, pinned dependencies, Docker/Compose, PostgreSQL/Redis, Flyway, CI and operational runbook | Clean startup, migrations, health checks, graceful shutdown and reproducible setup |
-| 2. Configuration and contracts | Typed policy/limits, canonical hashes, decimal/time models and outcome algebra | Invalid-setting rejection, stable hashes, boundary fixtures and contract validation |
+| 2. Configuration and contracts | Typed startup limits, live versioned database policy, canonical hashes, decimal/time models and outcome algebra | Invalid-setting rejection, atomic live activation/rollback, stable hashes, boundary fixtures and contract alignment |
 | 3. Protected ingress | Scoped authentication/authorization, trusted-source permissions, shared quotas and bounded request processing | Access-isolation, validation, quota and dependency-failure tests |
 | 4. First evaluation flow | Atomic persistence, idempotency, customer locking, high-amount rule and event retrieval | POST-to-GET flow, replay/conflict handling, rollback, duplicate races and lost-response recovery |
 | 5. Historical rules | Velocity and cumulative debit spend | Window/currency boundaries, multi-instance history correctness and query measurements |

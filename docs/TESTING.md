@@ -1,14 +1,16 @@
 # Testing and acceptance
 
-**Status:** runtime foundation tests are implemented. Business/security/concurrency/load and financial recovery acceptance remain pending. Coverage corresponds to the [delivery milestones](DELIVERY_PLAN.md).
+**Status:** runtime, typed-configuration/domain-contract and live-policy tests are implemented. Business/security/concurrency/load and financial recovery acceptance remain pending. Coverage corresponds to the [delivery milestones](DELIVERY_PLAN.md).
 
-## Foundation verification
+## Implemented verification
 
-`./mvnw -B -ntp verify` runs five integration tests against real PostgreSQL and Redis: exact health responses, denied routes/no session cookies, restricted runtime SQL privileges, incompatible schema readiness, and dependency stalls with recovery. Migrations are applied twice to verify the second pass is a no-op. Dependencies are paused during fault tests so their randomly mapped host ports stay stable.
+Unit/contract tests cover strict policy/limits validation, independent canonical hash vectors, semantic mutations, money/time boundaries, outcome algebra, result completeness and Spring registration of a test-only sixth rule definition. That extension proves configuration discovery; rule-engine execution remains a later milestone. Domain records are internal contracts; HTTP DTO adapters remain future work. OpenAPI alignment checks the published enums and extensible IDs, rather than claiming unimplemented HTTP endpoints conform.
 
-`./scripts/smoke.sh` exercises the actual Compose configuration: first-volume database initialization, the one-shot migration entrypoint, dependency stop/start recovery, persisted schema after restart, graceful shutdown, migration startup gating, Redis authentication/command restrictions and application container restrictions. It uses disposable resources. CI runs both layers; local reports remain generated artifacts under `target/`.
+Real PostgreSQL/Redis integration tests exercise migrations/no-op reruns, runtime/configuration privileges, live policy selection, activation visibility/rollback/history, invalid-active-policy recovery, pool settings and dependency stalls. An overlapping-selection test preserves captured snapshots and prevents stale work from regressing the cache.
 
-These checks establish the foundation only. They do not establish fraud correctness, authorization scope, limiter behaviour, financial persistence, production capacity or successful backup restoration.
+The Compose smoke test covers fresh-volume initialization, the actual migration/seed/activation entrypoints, live business changes without app restart, rejected configuration, preserved policy on restart, dependency recovery, graceful shutdown, resource restrictions and startup failure gates. It uses disposable resources. The local commands are in [README](../README.md); generated reports stay under `target/`.
+
+These checks do not establish fraud correctness, producer authorization scope, limiter behaviour, financial persistence, production capacity or successful backup restoration.
 
 ## Test boundaries
 
@@ -24,7 +26,7 @@ The contracts under test are defined in [Architecture](ARCHITECTURE.md), [Rules]
 
 ## Scenario coverage
 
-SC identifiers connect scenarios to tests and reports. Foundation health/dependency and migration checks provide partial coverage for SC-08, SC-09, SC-10 and SC-13. No scenario below is fully accepted yet. The matrix covers identified risks rather than every possible failure.
+SC identifiers connect scenarios to tests and reports. Contract-level checks provide partial coverage for SC-01, SC-03, SC-14, SC-19 and SC-27; runtime dependency/migration checks contribute to SC-08, SC-09, SC-10 and SC-13. No scenario below is fully accepted yet. The matrix covers identified risks rather than every possible failure.
 
 | ID | Risk / acceptance invariant | Required evidence |
 | --- | --- | --- |
@@ -67,7 +69,7 @@ Benchmark reports identify hardware, JVM/container limits, versions, policy, quo
 
 ## CI and evidence
 
-The verification pipeline covers Maven Wrapper verification, formatting/static checks, contract validation, real-dependency integration tests, Docker build/smoke and secret/dependency/image scans. Feature checks combine focused tests with regression coverage. Multi-instance, failure, load and restore suites cover relevant changes and release validation.
+The current workflow runs Maven unit/contract and real-dependency integration tests, then Docker build/smoke. Formatting/static checks and automated secret/dependency/image scans remain release-pipeline work. Feature checks combine focused tests with regression coverage. Multi-instance, failure, load and restore suites cover relevant changes and release validation.
 
 Evidence identifies the command, commit/artifact digest, dependency versions, fixture/policy hashes, environment, UTC timestamp, outcome and report location. Reports exclude credentials and personal data. Clean-clone runtime verification is separate from CI build success.
 

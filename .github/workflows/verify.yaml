@@ -1,4 +1,4 @@
-name: Verify foundation
+name: Verify service
 on:
   push:
     branches: [main]

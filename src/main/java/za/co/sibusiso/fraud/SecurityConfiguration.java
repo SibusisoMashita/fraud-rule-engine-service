@@ -11,7 +11,7 @@ import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.config.http.SessionCreationPolicy;
 
 @Configuration
-@Profile("!migrate")
+@Profile("!migrate & !policy-admin")
 class SecurityConfiguration {
     @Bean
     UserDetailsService noLoginUsers() {

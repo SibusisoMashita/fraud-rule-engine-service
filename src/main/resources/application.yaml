@@ -4,36 +4,24 @@ spring:
   config:
     import: optional:configtree:/run/secrets/
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/fraud?currentSchema=fraud&connectTimeout=1&socketTimeout=2}
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/fraud?currentSchema=fraud}
     username: fraud_runtime
-    hikari:
-      maximum-pool-size: 10
-      initialization-fail-timeout: -1
-      connection-timeout: 500
-      validation-timeout: 250
-      connection-init-sql: SET statement_timeout = '1500ms'
   flyway:
     enabled: false
   data:
     redis:
       host: ${REDIS_HOST:localhost}
-      connect-timeout: 250ms
-      timeout: 250ms
-  lifecycle:
-    timeout-per-shutdown-phase: 30s
 server:
   port: 8080
   shutdown: graceful
-  tomcat:
-    threads:
-      max: 20
-      min-spare: 2
-    max-connections: 100
-    accept-count: 20
-    connection-timeout: 5s
   error:
     include-message: never
     include-stacktrace: never
+fraud:
+  deployment-stop-grace-seconds: ${CONTAINER_STOP_GRACE_SECONDS:45}
+  policy-input: ${FRAUD_POLICY_INPUT:classpath:config/policy.example.yaml}
+  policy-command: ${FRAUD_POLICY_COMMAND:seed}
+  limits-location: ${FRAUD_LIMITS_LOCATION:classpath:config/service.example.yaml}
 ---
 spring:
   config:
@@ -45,9 +33,20 @@ spring:
     username: fraud_migrator
     hikari:
       maximum-pool-size: 2
+      connection-timeout: 500
+      validation-timeout: 250
       connection-init-sql: SET statement_timeout = '30s'
   flyway:
     enabled: true
     default-schema: fraud
     create-schemas: false
     clean-disabled: true
+---
+spring:
+  config:
+    activate:
+      on-profile: policy-admin
+  main:
+    web-application-type: none
+  datasource:
+    username: fraud_policy_admin

@@ -24,7 +24,9 @@ api:
 operations:
   dbPoolMaxConnectionsPerReplica: 10
   maxConcurrentRequestsPerReplica: 20
+  httpMinSpareThreads: 2
   maxQueuedRequestsPerReplica: 20
+  httpConnectionTimeoutMillis: 5000
   poolAcquireTimeoutMillis: 500
   lockTimeoutMillis: 1000
   statementTimeoutMillis: 1500

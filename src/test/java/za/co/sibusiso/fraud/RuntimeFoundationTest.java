@@ -42,14 +42,27 @@ class RuntimeFoundationTest {
                 var statement = connection.createStatement()) {
             statement.execute("CREATE ROLE fraud_migrator LOGIN PASSWORD 'synthetic-test-password'");
             statement.execute("CREATE ROLE fraud_runtime LOGIN PASSWORD 'synthetic-test-password'");
+            statement.execute("CREATE ROLE fraud_policy_admin LOGIN PASSWORD 'synthetic-test-password'");
             statement.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC");
             statement.execute("CREATE SCHEMA fraud AUTHORIZATION fraud_migrator");
             statement.execute("GRANT USAGE ON SCHEMA fraud TO fraud_runtime");
         }
         var flyway = Flyway.configure().dataSource(DATABASE.getJdbcUrl(), "fraud_migrator", PASSWORD)
                 .defaultSchema("fraud").createSchemas(false).load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(2);
         assertThat(flyway.migrate().migrationsExecuted).isZero();
+        var yaml = new za.co.sibusiso.fraud.configuration.StrictYaml();
+        var resource = new org.springframework.core.io.ClassPathResource("config/policy.example.yaml");
+        String policyText = yaml.readText(resource);
+        var loader = new za.co.sibusiso.fraud.configuration.PolicyLoader(yaml,
+                za.co.sibusiso.fraud.configuration.RuleRegistry.of(
+                        za.co.sibusiso.fraud.configuration.BuiltInRules.definitions(), 64));
+        try (var connection = DriverManager.getConnection(DATABASE.getJdbcUrl(), "fraud_policy_admin", PASSWORD);
+                var statement = connection.prepareStatement("SELECT fraud.activate_policy(?, ?, true)")) {
+            statement.setString(1, loader.read(policyText).policyHash());
+            statement.setString(2, policyText);
+            statement.executeQuery().close();
+        }
         properties.add("spring.datasource.url", () -> DATABASE.getJdbcUrl() + "&connectTimeout=1&socketTimeout=2");
         properties.add("spring.datasource.password", () -> PASSWORD);
         properties.add("spring.data.redis.host", REDIS::getHost);
@@ -59,6 +72,20 @@ class RuntimeFoundationTest {
 
     @LocalServerPort int port;
     @Autowired JdbcTemplate jdbc;
+    @Autowired za.co.sibusiso.fraud.configuration.ServiceLimits limits;
+    @Autowired za.co.sibusiso.fraud.policy.ActivePolicyProvider policies;
+    @Autowired com.zaxxer.hikari.HikariDataSource dataSource;
+
+    @Test
+    void validatedSettingsDriveTheRealPoolAndPolicyActivation() {
+        assertThat(dataSource.getMaximumPoolSize()).isEqualTo(limits.operations().dbPoolMaxConnectionsPerReplica());
+        assertThat(dataSource.getConnectionTimeout()).isEqualTo(limits.operations().poolAcquireTimeoutMillis());
+        assertThat(jdbc.queryForObject("SHOW statement_timeout", String.class)).isEqualTo("1500ms");
+        assertThat(jdbc.queryForObject("SHOW lock_timeout", String.class)).isEqualTo("1s");
+        assertThat(policies.current().rules()).hasSize(5);
+        assertThat(policies.current().policyHash()).matches("[a-f0-9]{64}");
+    }
+
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
 
     @Test
@@ -91,12 +118,12 @@ class RuntimeFoundationTest {
 
     @Test
     void schemaMismatchPreventsReadiness() throws Exception {
-        changeSchemaVersion(2, 1);
+        changeSchemaVersion(99, 2);
         try {
             assertResponse("/health/ready", 503, "{\"status\":\"DOWN\"}");
             assertResponse("/health/live", 200, "{\"status\":\"UP\"}");
         } finally {
-            changeSchemaVersion(1, 2);
+            changeSchemaVersion(2, 99);
         }
     }
 
@@ -124,6 +151,94 @@ class RuntimeFoundationTest {
             docker.unpauseContainerCmd(DATABASE.getContainerId()).exec();
         }
         awaitReady();
+    }
+
+    @Test
+    void activatesPolicyWithoutRestartAndPreservesPublishedVersions() throws Exception {
+        String original = policyText();
+        var before = policies.current();
+        long revision = jdbc.queryForObject("SELECT revision FROM fraud.policy_head WHERE singleton", Long.class);
+        String updated = original.replace("25000.00", "25000.01");
+        String nextHash = policyHash(updated);
+        try {
+            activate(nextHash, updated, false);
+            assertThat(policies.current().policyHash()).isEqualTo(nextHash).isNotEqualTo(before.policyHash());
+            assertThat(before.policyHash()).isEqualTo(policyHash(original));
+            assertThat(jdbc.queryForObject("SELECT revision FROM fraud.policy_head WHERE singleton", Long.class)).isEqualTo(revision + 1);
+            assertThat(jdbc.queryForObject("SELECT policy_hash FROM fraud.policy_activations WHERE revision = ?", String.class, revision + 1))
+                    .isEqualTo(nextHash);
+            assertResponse("/health/ready", 200, "{\"status\":\"UP\"}");
+            activate(before.policyHash(), original, true);
+            assertThat(policies.current().policyHash()).isEqualTo(nextHash);
+            assertThatThrownBy(() -> jdbc.update("UPDATE fraud.policy_head SET policy_hash = NULL"))
+                    .rootCause().hasMessageContaining("permission denied");
+            assertThatThrownBy(() -> jdbc.queryForObject("SELECT fraud.activate_policy(?, ?, false)", String.class,
+                    before.policyHash(), original)).rootCause().hasMessageContaining("permission denied");
+            try (var connection = DriverManager.getConnection(DATABASE.getJdbcUrl(), "fraud_policy_admin", PASSWORD);
+                    var statement = connection.createStatement()) {
+                assertThatThrownBy(() -> statement.executeUpdate("UPDATE fraud.policy_versions SET policy_yaml = 'changed'"))
+                        .hasMessageContaining("permission denied");
+                assertThatThrownBy(() -> statement.executeUpdate("DELETE FROM fraud.policy_activations"))
+                        .hasMessageContaining("permission denied");
+            }
+        } finally { activate(before.policyHash(), original, false); }
+    }
+
+    @Test
+    void uncommittedActivationIsInvisibleAndRollbackPreservesHeadAndAudit() throws Exception {
+        String original = policyText();
+        String before = policies.current().policyHash();
+        long revision = jdbc.queryForObject("SELECT revision FROM fraud.policy_head WHERE singleton", Long.class);
+        long auditCount = jdbc.queryForObject("SELECT count(*) FROM fraud.policy_activations", Long.class);
+        String changed = original.replace("25000.00", "25000.02");
+        String hash = policyHash(changed);
+        try (var connection = DriverManager.getConnection(DATABASE.getJdbcUrl(), "fraud_policy_admin", PASSWORD)) {
+            connection.setAutoCommit(false);
+            try (var statement = connection.prepareStatement("SELECT fraud.activate_policy(?, ?, false)")) {
+                statement.setString(1, hash);
+                statement.setString(2, changed);
+                statement.executeQuery().close();
+            }
+            assertThat(policies.current().policyHash()).isEqualTo(before);
+            connection.rollback();
+        }
+        assertThat(jdbc.queryForObject("SELECT revision FROM fraud.policy_head WHERE singleton", Long.class)).isEqualTo(revision);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fraud.policy_activations", Long.class)).isEqualTo(auditCount);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fraud.policy_versions WHERE policy_hash = ?", Integer.class, hash)).isZero();
+    }
+
+    @Test
+    void invalidDatabasePolicyClosesReadinessWithoutUsingCachedPolicyAndRecovers() throws Exception {
+        String original = policyText();
+        String before = policies.current().policyHash();
+        try {
+            activate("0".repeat(64), "schemaVersion: 999", false);
+            assertThatThrownBy(policies::current).isInstanceOf(za.co.sibusiso.fraud.policy.PolicyUnavailableException.class);
+            assertResponse("/health/ready", 503, "{\"status\":\"DOWN\"}");
+            assertResponse("/health/live", 200, "{\"status\":\"UP\"}");
+        } finally { activate(before, original, false); }
+        assertResponse("/health/ready", 200, "{\"status\":\"UP\"}");
+    }
+
+    private static String policyText() {
+        return new za.co.sibusiso.fraud.configuration.StrictYaml().readText(
+                new org.springframework.core.io.ClassPathResource("config/policy.example.yaml"));
+    }
+
+    private static String policyHash(String text) {
+        return new za.co.sibusiso.fraud.configuration.PolicyLoader(new za.co.sibusiso.fraud.configuration.StrictYaml(),
+                za.co.sibusiso.fraud.configuration.RuleRegistry.of(za.co.sibusiso.fraud.configuration.BuiltInRules.definitions(), 64))
+                .read(text).policyHash();
+    }
+
+    private static void activate(String hash, String text, boolean seed) throws SQLException {
+        try (var connection = DriverManager.getConnection(DATABASE.getJdbcUrl(), "fraud_policy_admin", PASSWORD);
+                var statement = connection.prepareStatement("SELECT fraud.activate_policy(?, ?, ?)")) {
+            statement.setString(1, hash);
+            statement.setString(2, text);
+            statement.setBoolean(3, seed);
+            statement.executeQuery().close();
+        }
     }
 
     private void changeSchemaVersion(int next, int previous) throws SQLException {

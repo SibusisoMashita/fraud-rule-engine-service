@@ -6,3 +6,6 @@
 !src/
 !src/main/
 !src/main/**
+!config/
+!config/policy.example.yaml
+!config/service.example.yaml
