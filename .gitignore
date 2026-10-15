@@ -1,0 +1,19 @@
+# Local preparation, archived drafts and machine-specific files
+/.local-notes/
+/.idea/
+*.iml
+.DS_Store
+
+# Build output
+/target/
+
+# Runtime secrets and local overrides (safe templates may be committed)
+.env
+.env.*
+!.env.example
+/secrets/
+
+# Generated runtime/test artifacts
+/logs/
+/reports/
+*.log

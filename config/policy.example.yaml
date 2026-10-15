@@ -1,0 +1,36 @@
+# Example fraud policy. Values are illustrative.
+schemaVersion: 1
+canonicalizationVersion: 1
+supportedCurrencies:
+  ZAR: {scale: 2, maxAmount: "999999999999.99"}
+ingest:
+  maxEventAgeSeconds: 604800
+  maxFutureSkewSeconds: 120
+rules:
+  highAmount:
+    enabled: true
+    thresholds: {ZAR: "25000.00"}
+  transactionVelocity:
+    enabled: true
+    windowSeconds: 600
+    maxTransactions: 5
+  cumulativeSpend:
+    enabled: true
+    windowSeconds: 1800
+    thresholds: {ZAR: "30000.00"}
+  impossibleTravel:
+    enabled: true
+    maxComparisonAgeSeconds: 86400
+    maxCandidates: 500
+    maxSpeedKmh: 1000
+    minDistanceKm: 50
+    travelAllowanceKm: 25
+    maxAccuracyKm: 5
+    trustedSources: [VERIFIED_ATM_TERMINAL, VERIFIED_CARD_PRESENT_TERMINAL]
+    eligibleChannels: [ATM, CARD_PRESENT]
+  smallPaymentBurstThenLarge:
+    enabled: true
+    windowSeconds: 900
+    minSmallPayments: 3
+    smallPaymentMaximum: {ZAR: "50.00"}
+    largePaymentThreshold: {ZAR: "5000.00"}

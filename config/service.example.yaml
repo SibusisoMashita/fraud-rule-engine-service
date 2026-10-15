@@ -1,0 +1,38 @@
+# Operational limits: separate from fraud policy hash; no secrets.
+schemaVersion: 1
+api:
+  maxRegisteredRules: 64
+  maxEvidenceFactsPerRule: 16
+  maxBodyBytes: 16384
+  maxJsonDepth: 8
+  maxJsonNumberLength: 32
+  maxIdentifierLength: 128
+  maxCategoryLength: 64
+  maxCityLength: 128
+  maxCursorLength: 2048
+  defaultPageSize: 20
+  maxPageSize: 100
+  defaultQueryRangeDays: 1
+  maxQueryRangeDays: 31
+  businessDeadlineMillis: 8000
+  edgeDeadlineMillis: 10000
+  exampleClientDeadlineMillis: 12000
+  rateLimits:
+    ingest: {capacity: 30, refillPerSecond: 5}
+    read: {capacity: 60, refillPerSecond: 10}
+    policy: {capacity: 5, refillPerSecond: 1}
+operations:
+  dbPoolMaxConnectionsPerReplica: 10
+  maxConcurrentRequestsPerReplica: 20
+  maxQueuedRequestsPerReplica: 20
+  poolAcquireTimeoutMillis: 500
+  lockTimeoutMillis: 1000
+  statementTimeoutMillis: 1500
+  redisTimeoutMillis: 250
+  commitReserveMillis: 500
+  maxProcessingMillis: 6000
+  gracefulShutdownSeconds: 30
+  containerStopGraceSeconds: 45
+  maxClockRegressionMillis: 1000
+# Edge ingress quotas, socket/header/idle bounds and container resource limits
+# are deployment-specific configuration.
