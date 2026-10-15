@@ -130,7 +130,7 @@ class TransactionalEvaluationTest {
             assertThat(match.statusCode()).as(match.body()).isEqualTo(201);
             assertThat(json.readTree(match.body()).at("/evaluation/decision").asString()).isEqualTo("FLAGGED");
             var highResult=json.readTree(match.body()).at("/evaluation/ruleResults").findValues("currency");
-            assertThat(highResult).singleElement().satisfies(currency->assertThat(currency.asString()).isEqualTo("USD"));
+            assertThat(highResult).hasSize(2).allSatisfy(currency->assertThat(currency.asString()).isEqualTo("USD"));
             activate(original.replace("ZAR","USD").replace("999999999999.99","40000.00"));
             var scale=post(who,above.replace("above","excess-scale"));
             assertThat(scale.statusCode()).as(scale.body()).isEqualTo(422);
@@ -361,7 +361,7 @@ class TransactionalEvaluationTest {
     }
     private String activate(String source) {
         var yaml=new StrictYaml();var snapshot=new PolicyLoader(yaml,RuleRegistry.of(BuiltInRules.definitions(),limits.api().maxRegisteredRules())).read(source);
-        new RuleEngine(List.of(new HighAmountRule()), limits.api().maxEvidenceFactsPerRule()).verify(snapshot);
+        new RuleEngine(List.of(new HighAmountRule(), new za.co.sibusiso.fraud.evaluation.TransactionVelocityRule(), new za.co.sibusiso.fraud.evaluation.CumulativeSpendRule()), limits.api().maxEvidenceFactsPerRule()).verify(snapshot);
         return database("fraud_policy_admin").queryForObject("SELECT fraud.activate_policy(?,?,false)",String.class,snapshot.policyHash(),source);
     }
     private void assertCounts(Identity who,int events,int instruments) {

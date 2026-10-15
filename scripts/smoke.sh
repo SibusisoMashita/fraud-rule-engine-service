@@ -112,6 +112,38 @@ test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/conflict.json" 
 compose exec -T db psql -U postgres -d fraud -Atc "SELECT count(*) FROM fraud.transactions WHERE scope='local-demo'; SELECT count(*) FROM fraud.evaluations WHERE scope='local-demo'; SELECT count(*) FROM fraud.rule_results WHERE scope='local-demo'; SELECT customer_sequence FROM fraud.customer_processing_state WHERE scope='local-demo'" > "$flow_tmp/counts"
 printf '1\n1\n5\n1\n' > "$flow_tmp/expected-counts"
 cmp -s "$flow_tmp/counts" "$flow_tmp/expected-counts"
+# Distinct events alternate between app processes but share one customer history.
+history_n=1
+while [ "$history_n" -le 6 ]; do
+    history_origin=$base
+    if [ $((history_n % 2)) -eq 0 ]; then history_origin=$peer_base; fi
+    printf '{"eventId":"history-%s","customerId":"history-customer","instrumentId":"history-card","transactionType":"CARD_PURCHASE","status":"BOOKED","channel":"ECOMMERCE","amount":"6000.00","currency":"ZAR","category":"GROCERIES","occurredAt":"%s"}\n' "$history_n" "$flow_time" > "$flow_tmp/history-$history_n.json"
+    test "$(api_request "$history_origin" POST /api/v1/transactions "$flow_tmp/history-$history_n.json" "$flow_tmp/history-$history_n-response.json")" = 201
+    history_decision=CLEAR
+    if [ "$history_n" -eq 6 ]; then history_decision=FLAGGED; fi
+    grep -Eq "\"decision\"[[:space:]]*:[[:space:]]*\"$history_decision\"" "$flow_tmp/history-$history_n-response.json"
+    history_n=$((history_n + 1))
+done
+compose exec -T db psql -U postgres -d fraud -Atc "SELECT evidence->>'count' FROM fraud.rule_results WHERE scope='local-demo' AND event_id='history-6' AND rule_id='TRANSACTION_VELOCITY'; SELECT evidence->>'total' FROM fraud.rule_results WHERE scope='local-demo' AND event_id='history-6' AND rule_id='CUMULATIVE_SPEND'" > "$flow_tmp/history-facts"
+printf '6\n36000\n' > "$flow_tmp/expected-history-facts"
+cmp -s "$flow_tmp/history-facts" "$flow_tmp/expected-history-facts"
+history_started=$(docker inspect -f '{{.State.StartedAt}}' "$app_id")
+history_peer_started=$(docker inspect -f '{{.State.StartedAt}}' "$peer_id")
+sed -e 's/maxTransactions: 5/maxTransactions: 10/' -e 's/30000.00/50000.00/' config/policy.example.yaml > "$policy_fixture"
+./scripts/activate-policy.sh "$policy_fixture"
+test "$(docker inspect -f '{{.State.StartedAt}}' "$app_id")" = "$history_started"
+test "$(docker inspect -f '{{.State.StartedAt}}' "$peer_id")" = "$history_peer_started"
+test "$(api_request "$peer_base" POST /api/v1/transactions "$flow_tmp/history-6.json" "$flow_tmp/history-replay.json")" = 200
+cmp -s "$flow_tmp/history-6-response.json" "$flow_tmp/history-replay.json"
+sed -e 's/history-6/history-7/' -e 's/6000.00/1000.00/' "$flow_tmp/history-6.json" > "$flow_tmp/history-7.json"
+test "$(api_request "$peer_base" POST /api/v1/transactions "$flow_tmp/history-7.json" "$flow_tmp/history-7-response.json")" = 201
+grep -Eq '"decision"[[:space:]]*:[[:space:]]*"CLEAR"' "$flow_tmp/history-7-response.json"
+compose exec -T db psql -U postgres -d fraud -Atc "SELECT evidence->>'total' FROM fraud.rule_results WHERE scope='local-demo' AND event_id='history-7' AND rule_id='CUMULATIVE_SPEND'" | grep -qx 37000
+sed '/^  transactionVelocity:/,/^  impossibleTravel:/s/enabled: true/enabled: false/' config/policy.example.yaml > "$policy_fixture"
+./scripts/activate-policy.sh "$policy_fixture"
+sed 's/history-7/history-8/' "$flow_tmp/history-7.json" > "$flow_tmp/history-8.json"
+test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/history-8.json" "$flow_tmp/history-8-response.json")" = 201
+compose exec -T db psql -U postgres -d fraud -Atc "SELECT count(*) FROM fraud.rule_results WHERE scope='local-demo' AND event_id='history-8' AND status='DISABLED'" | grep -qx 4
 principal_hash=$(printf local-demo | openssl dgst -sha256 | awk '{print $NF}')
 quota_key="fraud:quota:$principal_hash:READ"
 quota_time=$(( $(date +%s) * 1000 + 60000 ))
@@ -138,13 +170,13 @@ ready
 test "$(docker inspect -f '{{.State.StartedAt}}' "$app_id")" = "$started_at"
 test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/event.json" "$flow_tmp/replay.json")" = 200
 cmp -s "$flow_tmp/first.json" "$flow_tmp/replay.json"
-sed 's/smoke-race/live-policy-event/' "$flow_tmp/event.json" > "$flow_tmp/live.json"
+sed -e 's/smoke-race/live-policy-event/' -e 's/smoke-customer/policy-customer/' -e 's/smoke-card/policy-card/' "$flow_tmp/event.json" > "$flow_tmp/live.json"
 test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/live.json" "$flow_tmp/live-response.json")" = 201
 grep -Eq '"decision"[[:space:]]*:[[:space:]]*"CLEAR"' "$flow_tmp/live-response.json"
 grep -Eq "\"policyHash\"[[:space:]]*:[[:space:]]*\"$active_hash\"" "$flow_tmp/live-response.json"
 compose run --rm --no-deps policy-seed
 test "$(head_hash)" = "$active_hash"
-sed '/^  transactionVelocity:/,/^  cumulativeSpend:/s/enabled: false/enabled: true/' config/policy.example.yaml > "$policy_fixture"
+sed '/^  impossibleTravel:/,/^  smallPaymentBurstThenLarge:/s/enabled: false/enabled: true/' config/policy.example.yaml > "$policy_fixture"
 if ./scripts/activate-policy.sh "$policy_fixture"; then
     echo 'Unavailable rule unexpectedly activated' >&2
     exit 1
@@ -167,14 +199,14 @@ expect /health/ready 503
 expect /health/live 200
 compose start db
 ready
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 4
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 5
 compose stop app
 compose logs app | grep -q 'Graceful shutdown complete'
 compose up -d --no-build
 ready
 # Re-running the real migration entrypoint must preserve the installed schema.
 compose run --rm --no-deps migrate
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 4
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 5
 test "$(head_hash)" = "$active_hash"
 test "$(api_request "$base" GET /api/v1/transactions/smoke-race /dev/null "$flow_tmp/restarted.json")" = 200
 cmp -s "$flow_tmp/first.json" "$flow_tmp/restarted.json"
@@ -212,4 +244,4 @@ if compose -f compose.yaml -f "$override" up -d --no-build app; then
     exit 1
 fi
 test -z "$(compose ps --status running -q app)"
-echo 'Runtime, live-policy, protected-ingress and transactional-evaluation smoke checks passed.'
+echo 'Runtime, live-policy, protected-ingress, transactional-evaluation and historical-rule smoke checks passed.'

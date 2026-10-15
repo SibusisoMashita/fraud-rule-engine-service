@@ -3,6 +3,8 @@ package za.co.sibusiso.fraud.evaluation;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.LinkedHashMap;
+import java.math.BigDecimal;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import org.springframework.context.annotation.Profile;
@@ -52,7 +54,11 @@ public class TransactionalEvaluation implements EvaluationWriter {
         long sequence=Math.addExact(state.sequence(),1);
         Instant accepted=acceptedAt;
         change(budget,()->store.insertEvent(caller,event,hash,accepted,sequence));
-        var outcome=engine.evaluate(event,policy,new FraudRule.Context(accepted,state.sequence()),limits.api());
+        var facts = new LinkedHashMap<HistoryQuery, BigDecimal>();
+        for (var query : engine.historyQueries(event, policy)) {
+            facts.put(query, sql(budget, () -> store.aggregate(caller.scope(), event.customerId(), query, accepted, state.sequence())));
+        }
+        var outcome=engine.evaluate(event,policy,new FraudRule.Context(accepted,state.sequence(),new HistoryFacts(facts)),limits.api());
         budget.remaining();
         Instant evaluated=sql(budget,store::databaseTime);
         Instant evaluatedAt=evaluated.isBefore(accepted)?accepted:evaluated;

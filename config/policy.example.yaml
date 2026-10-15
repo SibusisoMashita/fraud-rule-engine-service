@@ -11,11 +11,11 @@ rules:
     enabled: true
     thresholds: {ZAR: "25000.00"}
   transactionVelocity:
-    enabled: false
+    enabled: true
     windowSeconds: 600
     maxTransactions: 5
   cumulativeSpend:
-    enabled: false
+    enabled: true
     windowSeconds: 1800
     thresholds: {ZAR: "30000.00"}
   impossibleTravel:

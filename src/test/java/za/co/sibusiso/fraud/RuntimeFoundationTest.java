@@ -93,12 +93,12 @@ class RuntimeFoundationTest {
 
     @Test
     void schemaMismatchPreventsReadiness() throws Exception {
-        changeSchemaVersion(99, 4);
+        changeSchemaVersion(99, 5);
         try {
             assertResponse("/health/ready", 503, "{\"status\":\"DOWN\"}");
             assertResponse("/health/live", 200, "{\"status\":\"UP\"}");
         } finally {
-            changeSchemaVersion(4, 99);
+            changeSchemaVersion(5, 99);
         }
     }
 
@@ -198,7 +198,7 @@ class RuntimeFoundationTest {
     @Test
     void enablingAnUnavailableRuleDirectlyInDatabaseClosesReadinessWithoutCachedFallback() throws Exception {
         String original=policyText();String previous=policies.current().policyHash();
-        String incompatible=original.replace("transactionVelocity:\n    enabled: false","transactionVelocity:\n    enabled: true");
+        String incompatible=original.replace("impossibleTravel:\n    enabled: false","impossibleTravel:\n    enabled: true");
         try {
             activate(policyHash(incompatible),incompatible,false);
             assertThatThrownBy(policies::current).isInstanceOf(za.co.sibusiso.fraud.policy.PolicyUnavailableException.class);

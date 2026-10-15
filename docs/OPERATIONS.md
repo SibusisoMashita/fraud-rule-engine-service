@@ -90,7 +90,7 @@ Tomcat worker/connection/backlog/header bounds and idle timeouts, bounded JSON r
 
 Runtime has SELECT/INSERT on immutable transactions, evaluations, rule results and instrument owners. Only customer-state acceptance time/sequence can be updated. Deferred event/evaluation and result-completeness constraints prevent partial committed records. Customer locks serialize processing within `(scope,customerId)`; separate customers can proceed independently. Producer identity, source-permission revision and admitted source snapshot are stored without credentials. Policy activation never rewrites evaluations.
 
-Only high amount has an execution implementation in this build. The sample disables the remaining four rules. Activation rejects enabling an unavailable rule; bypassing the validator through raw SQL closes readiness and new-event selection until a compatible policy is restored. Existing results remain immutable.
+High amount, velocity and cumulative spend have execution implementations in this build and are enabled in the sample. Impossible travel and the small-payment sequence remain disabled. Activation rejects enabling an unavailable rule; bypassing the validator through raw SQL closes readiness and new-event selection until a compatible policy is restored. Existing results remain immutable.
 
 For an existing Stage 3 volume, build the new image, prepare a working copy of the active policy that preserves its business thresholds/currencies while disabling unavailable implementations, activate that copy, then recreate the stack. For the unchanged local sample, the sequence is:
 
@@ -100,7 +100,9 @@ docker compose build app
 docker compose up -d --no-build --wait --wait-timeout 120
 ```
 
-Use the active-policy working copy instead of the sample when settings have been customized. This is an explicit configuration activation, not a migration that silently changes business rules. Flyway V4 upgrades storage and preserves existing policy/identity data. Fresh startup seeds the compatible sample automatically.
+Use the active-policy working copy instead of the sample when settings have been customized. This is an explicit configuration activation, not a migration that silently changes business rules. Flyway V4 creates evaluation storage; V5 adds receipt-history covering indexes. Both preserve existing policy/identity data. Fresh startup seeds the compatible sample automatically.
+
+An existing Stage 4 installation can keep its high-amount-only policy unchanged. To enable velocity/cumulative spend, activate a working copy with their enabled states set to true while preserving the business windows, limits, currencies and thresholds. Recreating the app or changing the seed file does not activate it. V5 builds indexes with normal PostgreSQL locking; schedule migrations before admitting traffic for a large existing dataset.
 
 A POST success contains the original policy hash, evaluator artifact identity, accepted/evaluated times, preceding customer watermark and all configured results. Equality at the high-amount threshold is a nonmatch. Thresholds, currencies, windows and toggles are read from database policy, with no Java business defaults. Disabled results are explicit; an all-disabled policy remains invalid.
 

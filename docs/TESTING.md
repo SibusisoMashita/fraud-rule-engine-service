@@ -1,6 +1,6 @@
 # Testing and acceptance
 
-**Status:** runtime, live policy, protected ingress and the first transactional/high-amount flow are implemented and tested. Historical rules, complete endpoint conformance, full failure/recovery drills and measured capacity remain pending. Coverage corresponds to the [delivery milestones](DELIVERY_PLAN.md).
+**Status:** runtime, live policy, protected ingress and transactional/high-amount, velocity and cumulative-spend flows are implemented and tested. Impossible travel, the payment sequence, complete endpoint conformance, full failure/recovery drills and measured capacity remain pending. Coverage corresponds to the [delivery milestones](DELIVERY_PLAN.md).
 
 ## Implemented verification
 
@@ -12,9 +12,11 @@ Protected-ingress tests cover credential validity/revocation, live roles/source 
 
 Transactional tests use the real Spring proxy and independent PostgreSQL connections. They cover 201/200/409/404 behaviour, complete stored results, decimal/offset replay, current-policy bypass for existing identity, live thresholds/currencies/scales/amount limits/ingestion windows, scope and instrument isolation, single-effect duplicate races, changed-customer uniqueness recovery, lock timeout/retry, checked/unchecked rule rollback and uncommitted invisibility. Deferred constraints reject orphan/incomplete commits. Tests also cover policy activation before selection and during evaluation, receipt-clock regression, work-budget expiry, actual commit-reserve settings, commit-time rejection and conservative response/cleanup outcomes. An injected lost acknowledgement after a real proxy commit proves recovery finds one committed result; it is not a complete transport-fault drill.
 
-The Compose smoke test covers fresh-volume initialization, the actual migration/seed/activation entrypoints, live business changes without app restart, rejected configuration, preserved policy on restart, dependency recovery, graceful shutdown, resource restrictions, identity-seed preservation, two application containers sharing quota state, a cross-process duplicate race, live-threshold decisions, replay/conflict, persisted event retrieval and startup failure gates. It uses disposable resources. The local commands are in [README](../README.md); generated reports stay under `target/`.
+Historical rule tests cover strict count/decimal thresholds, inclusive/exclusive receipt boundaries at microsecond precision, watermark exclusion, missing facts, currency/scope/customer isolation, flagged/delayed history and totals larger than public page limits. Real HTTP tests prove live windows/count limits/spend thresholds/toggles, policy activation during history loading, timeout rollback/retry and concurrent distinct events with consecutive customer watermarks. A 6,000-row PostgreSQL fixture runs EXPLAIN ANALYZE/BUFFERS on the actual bound aggregate queries after VACUUM ANALYZE; covering-index access is verified without forcing planner settings. This is query-access evidence for that synthetic fixture, not a throughput benchmark.
 
-These checks establish the implemented high-amount predicate and scoped transaction path. They do not establish historical-rule correctness, every unknown-commit/network-fault case, total upload/transaction cancellation, production capacity or successful backup restoration.
+The Compose smoke test covers fresh-volume initialization, the actual migration/seed/activation entrypoints, live business changes without app restart, rejected configuration, preserved policy on restart, dependency recovery, graceful shutdown, resource restrictions, identity-seed preservation, two application containers sharing quota state, a cross-process duplicate race, alternating-instance history totals, live historical thresholds/toggles, live-threshold decisions, replay/conflict, persisted event retrieval and startup failure gates. It uses disposable resources. The local commands are in [README](../README.md); generated reports stay under `target/`.
+
+These checks establish the three implemented predicates and scoped transaction/history path. They do not establish impossible-travel/payment-sequence correctness, every unknown-commit/network-fault case, total upload/transaction cancellation, production capacity or successful backup restoration.
 
 ## Test boundaries
 
@@ -30,7 +32,7 @@ The contracts under test are defined in [Architecture](ARCHITECTURE.md), [Rules]
 
 ## Scenario coverage
 
-SC identifiers connect scenarios to tests and reports. Contract-level checks provide partial coverage for SC-01, SC-03, SC-14, SC-19 and SC-27; runtime dependency/migration checks contribute to SC-08, SC-09, SC-10 and SC-13. Protected-ingress checks add partial coverage for SC-01, SC-02, SC-10, SC-11, SC-12 and SC-14. The first transactional flow adds evidence for SC-01–05, SC-07, SC-09, SC-13–14, SC-17, SC-19, SC-22 and SC-27–28; acknowledgement-loss modelling contributes to SC-06. Broader release scenarios remain open. The matrix covers identified risks rather than every possible failure.
+SC identifiers connect scenarios to tests and reports. Contract-level checks provide partial coverage for SC-01, SC-03, SC-14, SC-19 and SC-27; runtime dependency/migration checks contribute to SC-08, SC-09, SC-10 and SC-13. Protected-ingress checks add partial coverage for SC-01, SC-02, SC-10, SC-11, SC-12 and SC-14. The first transactional flow adds evidence for SC-01–05, SC-07, SC-09, SC-13–14, SC-17, SC-19, SC-22 and SC-27–28; acknowledgement-loss modelling contributes to SC-06. Historical-rule boundary, concurrency and live-policy checks add evidence for SC-03–05, SC-12, SC-14, SC-17 and SC-19; their synthetic query plans contribute to SC-23 without establishing capacity. Broader release scenarios remain open. The matrix covers identified risks rather than every possible failure.
 
 | ID | Risk / acceptance invariant | Required evidence |
 | --- | --- | --- |

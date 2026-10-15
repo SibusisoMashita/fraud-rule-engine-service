@@ -2,7 +2,7 @@ openapi: 3.1.1
 info:
   title: Fraud Rule Engine Service — design contract
   version: 0.1.0-plan
-  description: Draft business contract. Transaction POST with high-amount evaluation and scoped event GET are implemented. Historical rules remain disabled; list/policy-query handlers remain 503 FEATURE_UNAVAILABLE. New committed input returns 201, identical replay 200, and changed content 409. Runtime readiness checks DB, Redis, schema and active policy compatibility. Policy activation is an operator CLI, not an HTTP endpoint. Monetary values are decimal strings. Service
+  description: Draft business contract. Transaction POST with high-amount, velocity and cumulative-spend evaluation and scoped event GET are implemented. Impossible travel and the payment sequence remain disabled; list/policy-query handlers remain 503 FEATURE_UNAVAILABLE. New committed input returns 201, identical replay 200, and changed content 409. Runtime readiness checks DB, Redis, schema and active policy compatibility. Policy activation is an operator CLI, not an HTTP endpoint. Monetary values are decimal strings. Service
     config may tighten published transport maxima. Rule IDs/results are extensible up to the published 64-rule bound;
     initial policy has five. Per-rule evidence is a bounded scalar map with versioned application semantics. Policy
     settings are validated on activation and loading; this contract does not certify their business validity.

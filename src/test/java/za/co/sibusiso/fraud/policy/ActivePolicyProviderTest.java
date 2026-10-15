@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.*;
 
 class ActivePolicyProviderTest {
     private final za.co.sibusiso.fraud.evaluation.RuleEngine engine = new za.co.sibusiso.fraud.evaluation.RuleEngine(
-            java.util.List.of(new za.co.sibusiso.fraud.evaluation.HighAmountRule()),
+            java.util.List.of(new za.co.sibusiso.fraud.evaluation.HighAmountRule(), new za.co.sibusiso.fraud.evaluation.TransactionVelocityRule(), new za.co.sibusiso.fraud.evaluation.CumulativeSpendRule()),
             new StrictYaml().read(new ClassPathResource("config/service.example.yaml"), ServiceLimits.class).api().maxEvidenceFactsPerRule());
     private final StrictYaml yaml = new StrictYaml();
     private final PolicyLoader loader = new PolicyLoader(yaml, RuleRegistry.of(BuiltInRules.definitions(), 64));

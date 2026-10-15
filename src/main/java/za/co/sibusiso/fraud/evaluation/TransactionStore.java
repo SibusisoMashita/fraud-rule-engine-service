@@ -1,6 +1,7 @@
 package za.co.sibusiso.fraud.evaluation;
 
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 import za.co.sibusiso.fraud.domain.EvaluationOutcome;
@@ -16,6 +17,7 @@ public interface TransactionStore {
     State lockCustomer(String scope, String customerId);
     String bindInstrument(String scope, String instrumentId, String customerId);
     Instant databaseTime();
+    BigDecimal aggregate(String scope, String customerId, HistoryQuery query, Instant acceptedAt, long highWatermark);
     void insertEvent(Caller caller, TransactionEvent event, String hash, Instant acceptedAt, long sequence);
     void insertEvaluation(String scope, String eventId, UUID id, String policyHash, String buildId,
             long highWatermark, Instant evaluatedAt, EvaluationOutcome outcome);

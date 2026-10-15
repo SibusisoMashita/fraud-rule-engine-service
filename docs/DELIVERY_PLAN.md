@@ -1,6 +1,6 @@
 # Delivery plan
 
-Stages 0–4 are implemented. The first flow commits a scoped event, its high-amount evaluation, every configured rule result and customer state together. Database policy drives thresholds and enabled states; unsupported implementations cannot be activated. POST replay/conflict and scoped event GET are available. The next stage adds velocity and cumulative-spend history.
+Stages 0–5 are implemented. Customer-locked evaluations now include velocity and same-currency cumulative spend, using database aggregates through the captured watermark. Windows, limits, thresholds and enabled states remain live database policy. The next stage adds impossible travel.
 
 ## Milestones
 

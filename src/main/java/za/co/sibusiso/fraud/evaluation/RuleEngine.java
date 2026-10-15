@@ -3,6 +3,9 @@ package za.co.sibusiso.fraud.evaluation;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.LinkedHashSet;
+import java.util.Collections;
 import java.util.Map;
 import java.util.TreeMap;
 import za.co.sibusiso.fraud.configuration.*;
@@ -30,6 +33,20 @@ public final class RuleEngine {
             ContractChecks.require(implementation.maximumEvidenceFacts() <= maximumEvidenceFacts,
                     "Configured evidence limit cannot represent enabled rule: " + id.value());
         });
+    }
+
+    public Set<HistoryQuery> historyQueries(TransactionEvent event, PolicySnapshot policy) {
+        verify(policy);
+        var queries = new LinkedHashSet<HistoryQuery>();
+        for (var configured : policy.rules().values()) {
+            if (configured.settings().enabled())
+                queries.addAll(queries(implementations.get(configured.definition().id()), configured.settings(), event));
+        }
+        return Collections.unmodifiableSet(queries);
+    }
+
+    private <C extends RuleSettings> Set<HistoryQuery> queries(FraudRule<C> rule, RuleSettings settings, TransactionEvent event) {
+        return rule.historyQueries(event, rule.definition().settingsType().cast(settings));
     }
 
     public EvaluationOutcome evaluate(TransactionEvent event, PolicySnapshot policy, FraudRule.Context context,

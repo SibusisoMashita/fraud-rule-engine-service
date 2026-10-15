@@ -6,10 +6,10 @@ import org.flywaydb.core.Flyway;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import static org.assertj.core.api.Assertions.assertThat;
 
-final class TestDatabase {
-    static final String PASSWORD = "synthetic-test-password";
+public final class TestDatabase {
+    public static final String PASSWORD = "synthetic-test-password";
     private TestDatabase() { }
-    static void initialize(PostgreSQLContainer DATABASE) throws SQLException {
+    public static void initialize(PostgreSQLContainer DATABASE) throws SQLException {
         try (var connection = DriverManager.getConnection(DATABASE.getJdbcUrl(), DATABASE.getUsername(), DATABASE.getPassword());
                 var statement = connection.createStatement()) {
             statement.execute("CREATE ROLE fraud_migrator LOGIN PASSWORD 'synthetic-test-password'");
@@ -36,7 +36,7 @@ final class TestDatabase {
             statement.setString(2, policyText);
             statement.executeQuery().close();
         }
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(3);
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         try (var connection = DriverManager.getConnection(DATABASE.getJdbcUrl(), "fraud_runtime", PASSWORD);
                 var statement = connection.createStatement();

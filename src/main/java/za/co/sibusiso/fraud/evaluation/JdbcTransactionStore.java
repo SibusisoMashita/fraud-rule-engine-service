@@ -1,6 +1,7 @@
 package za.co.sibusiso.fraud.evaluation;
 
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
@@ -55,6 +56,30 @@ public class JdbcTransactionStore implements TransactionStore {
         jdbc.update("INSERT INTO fraud.instrument_owners(scope,instrument_id,customer_id) VALUES (?,?,?) ON CONFLICT DO NOTHING", scope,instrumentId,customerId);
         return jdbc.queryForObject("SELECT customer_id FROM fraud.instrument_owners WHERE scope=? AND instrument_id=?",String.class,scope,instrumentId);
     }
+    static String historySql(HistoryQuery query) {
+        return switch (query) {
+            case HistoryQuery.Count ignored -> """
+                    SELECT count(*) FROM fraud.transactions
+                    WHERE scope=? AND customer_id=? AND accepted_at>? AND accepted_at<=? AND customer_sequence<=?
+                    """;
+            case HistoryQuery.Spend ignored -> """
+                    SELECT coalesce(sum(amount),0) FROM fraud.transactions
+                    WHERE scope=? AND customer_id=? AND accepted_at>? AND accepted_at<=? AND customer_sequence<=? AND currency=?
+                    """;
+        };
+    }
+    static Object[] historyArguments(String scope, String customerId, HistoryQuery query, Instant acceptedAt, long highWatermark) {
+        var start = utc(acceptedAt.minusSeconds(query.windowSeconds()));
+        return switch (query) {
+            case HistoryQuery.Count ignored -> new Object[]{scope,customerId,start,utc(acceptedAt),highWatermark};
+            case HistoryQuery.Spend spend -> new Object[]{scope,customerId,start,utc(acceptedAt),highWatermark,spend.currency()};
+        };
+    }
+    @Override public BigDecimal aggregate(String scope, String customerId, HistoryQuery query, Instant acceptedAt, long highWatermark) {
+        return jdbc.queryForObject(historySql(query), BigDecimal.class,
+                historyArguments(scope,customerId,query,acceptedAt,highWatermark));
+    }
+
     @Override public Instant databaseTime() {
         return jdbc.queryForObject("SELECT clock_timestamp()", OffsetDateTime.class).toInstant();
     }

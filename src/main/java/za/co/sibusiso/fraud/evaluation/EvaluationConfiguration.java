@@ -9,5 +9,7 @@ import org.springframework.context.annotation.Profile;
 @Profile("!migrate")
 public class EvaluationConfiguration {
     @Bean HighAmountRule highAmountRule() { return new HighAmountRule(); }
+    @Bean TransactionVelocityRule transactionVelocityRule() { return new TransactionVelocityRule(); }
+    @Bean CumulativeSpendRule cumulativeSpendRule() { return new CumulativeSpendRule(); }
     @Bean RuleEngine ruleEngine(List<FraudRule<?>> implementations, za.co.sibusiso.fraud.configuration.ServiceLimits limits) { return new RuleEngine(implementations, limits.api().maxEvidenceFactsPerRule()); }
 }

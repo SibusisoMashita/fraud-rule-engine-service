@@ -2,13 +2,13 @@
 
 A Java backend for evaluating categorized transaction events, storing explainable fraud flags, and retrieving results through an API.
 
-**Status:** the first transactional flow is implemented: authenticated `POST /api/v1/transactions` evaluates the high-amount rule and commits the event, evaluation and complete rule-result set together. Identical retries return the original result; `GET /api/v1/transactions/{eventId}` retrieves it within the caller's scope. Historical rules and list/policy-query endpoints remain planned.
+**Status:** the transactional flow and first three rules are implemented: authenticated `POST /api/v1/transactions` evaluates high amount, transaction velocity and cumulative spend and commits the event, evaluation and complete rule-result set together. Identical retries return the original result; `GET /api/v1/transactions/{eventId}` retrieves it within the caller's scope. Impossible travel, the small-payment sequence and list/policy-query endpoints remain planned.
 
 ## Scope
 
 V1 accepts immutable **BOOKED outgoing card purchases and ATM withdrawals** from authenticated producers. It flags potential fraud; it does not authorize payments, establish fraud, calculate balances, or process refunds/reversals. Producers supply a stable event identity, opaque customer/instrument identifiers and trustworthy physical-location evidence when available. The demonstration dataset is synthetic.
 
-The design defines five rules: high amount is implemented; velocity, cumulative spend, impossible travel and the small-payment sequence follow in later milestones. The sample policy enables only high amount. All thresholds, currencies, eligibility windows and enabled states come from the active database policy. Enabling an unavailable implementation is rejected.
+The design defines five rules: high amount, velocity and cumulative spend are implemented and enabled in the sample policy. Impossible travel and the small-payment sequence remain disabled until their milestones. All thresholds, currencies, eligibility windows and enabled states come from the active database policy. Enabling an unavailable implementation is rejected.
 
 ## Stack
 
@@ -71,7 +71,7 @@ printf 'header = "X-API-Key: %s"\n' "$(cat secrets/local-api-key)" |
 
 A new committed event returns 201 and `Location`; an identical POST returns 200 with the same stored evaluation. Reuse the saved file unchanged to replay it. Changed content under the same scoped event ID returns 409; a new payment needs a new event ID. Disabled rules appear explicitly as `DISABLED`. After a timeout or uncertain 5xx response, retrieve or replay the same ID/payload instead of generating a replacement identity.
 
-Existing Stage 3 volumes need a compatible active policy before the new app starts. [Operations](docs/OPERATIONS.md) describes that upgrade; seeding never silently overwrites business settings.
+Existing volumes retain their active policy. Flyway V5 adds receipt-history indexes; activate a validated working copy to enable the historical rules on an existing high-amount-only installation. [Operations](docs/OPERATIONS.md) describes upgrades; seeding never silently overwrites business settings.
 
 ## Test
 
@@ -82,7 +82,7 @@ With `JAVA_HOME` pointing to JDK 21:
 ./scripts/smoke.sh
 ```
 
-`verify` runs unit/contract tests and integration tests against disposable PostgreSQL and Redis containers and packages the executable JAR. The smoke test requires the locally built image and uses a separate disposable Compose project on port 18080. It covers two-process duplicate races, replay/conflict, live threshold changes, persisted retrieval and failure gates, then removes its containers, volumes and temporary fixtures. The two-instance check also uses port 18081. Set `SMOKE_PORT` and `SMOKE_PEER_PORT` when necessary. Docker must be available; integration tests are not silently skipped.
+`verify` runs unit/contract tests and integration tests against disposable PostgreSQL and Redis containers and packages the executable JAR. The smoke test requires the locally built image and uses a separate disposable Compose project on port 18080. It covers two-process duplicate races, replay/conflict, live thresholds/toggles, cross-process customer-history totals, persisted retrieval and failure gates, then removes its containers, volumes and temporary fixtures. The two-instance check also uses port 18081. Set `SMOKE_PORT` and `SMOKE_PEER_PORT` when necessary. Docker must be available; integration tests are not silently skipped.
 
 For Docker contexts using a non-default Unix socket, expose that context to Testcontainers before running Maven:
 
