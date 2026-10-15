@@ -8,15 +8,18 @@ compose() {
 export COMPOSE_PROJECT_NAME="fraud-smoke-$$"
 export APP_PORT="${SMOKE_PORT:-18080}"
 base="http://127.0.0.1:$APP_PORT"
+peer_id=
 override=$(mktemp)
+response_fixture=$(mktemp)
 policy_fixture="secrets/$COMPOSE_PROJECT_NAME-policy.yaml"
 limits_fixture="secrets/$COMPOSE_PROJECT_NAME-limits.yaml"
 cleanup() {
     result=$?
     trap - EXIT
-    if [ "$result" -ne 0 ]; then compose logs --tail=80; fi
-    compose down --volumes --remove-orphans
-    rm -f "$override" "$policy_fixture" "$limits_fixture"
+    if [ "$result" -ne 0 ]; then compose logs --tail=80 || true; fi
+    if [ -n "$peer_id" ]; then docker rm -f "$peer_id" >/dev/null || true; fi
+    compose down --volumes --remove-orphans || result=1
+    rm -f "$override" "$response_fixture" "$policy_fixture" "$limits_fixture"
     exit "$result"
 }
 trap cleanup EXIT
@@ -49,7 +52,48 @@ test -z "$(docker port "$(compose ps -q redis)")"
 compose exec -T redis redis-cli ping | grep -q NOAUTH
 compose exec -T redis sh -ec 'REDISCLI_AUTH="$(cat /run/secrets/spring.data.redis.password)" redis-cli SET foundation:forbidden value' | grep -q NOPERM
 expect /actuator/env 403
-expect /api/v1/evaluations 403
+expect /api/v1/evaluations 401
+# The same deployed guards apply to both application instances.
+auth_expect() {
+    endpoint=$1 expected=$2
+    code=$(printf 'header = "X-API-Key: %s"\n' "$(cat secrets/local-api-key)" |
+        curl --config - -sS --max-time 5 -o "$response_fixture" -w '%{http_code}' "$endpoint")
+    test "$code" = "$expected" || { echo "Protected endpoint returned $code; expected $expected" >&2; return 1; }
+    case "$expected" in
+        401) expected_code=INVALID_CREDENTIAL;;
+        429) expected_code=RATE_LIMITED;;
+        503) expected_code=FEATURE_UNAVAILABLE;;
+        *) echo 'Unsupported protected smoke expectation' >&2; return 1;;
+    esac
+    grep -Eq "\"code\"[[:space:]]*:[[:space:]]*\"$expected_code\"" "$response_fixture"
+    grep -Eq '"outcome"[[:space:]]*:[[:space:]]*"NOT_ACCEPTED"' "$response_fixture"
+}
+auth_expect "$base/api/v1/evaluations" 503
+compose exec -T redis sh -ec 'REDISCLI_AUTH="$(cat /run/secrets/spring.data.redis.password)" redis-cli HSET outside:key tokens 1' | grep -q NOPERM
+peer_port=${SMOKE_PEER_PORT:-18081}
+peer_id=$(compose run -d --no-deps -p "127.0.0.1:$peer_port:8080" app)
+peer_base="http://127.0.0.1:$peer_port"
+attempt=0
+until curl -fsS --max-time 5 "$peer_base/health/ready" >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    test "$attempt" -lt 90 || { echo 'Peer readiness timed out' >&2; exit 1; }
+    sleep 1
+done
+auth_expect "$peer_base/api/v1/evaluations" 503
+principal_hash=$(printf local-demo | openssl dgst -sha256 | awk '{print $NF}')
+quota_key="fraud:quota:$principal_hash:READ"
+quota_time=$(( $(date +%s) * 1000 + 60000 ))
+compose exec -T redis sh -ec 'REDISCLI_AUTH="$(cat /run/secrets/spring.data.redis.password)" redis-cli HSET "$1" tokens 0 time "$2"' sh "$quota_key" "$quota_time" >/dev/null
+auth_expect "$base/api/v1/evaluations" 429
+auth_expect "$peer_base/api/v1/evaluations" 429
+docker rm -f "$peer_id" >/dev/null
+peer_id=
+# Local seeding cannot undo a security administrator's revocation.
+compose exec -T db psql -U postgres -d fraud -c "UPDATE fraud.api_principals SET enabled=false WHERE principal_id='local-demo'" >/dev/null
+auth_expect "$base/api/v1/evaluations" 401
+compose run --rm --no-deps identity-seed
+auth_expect "$base/api/v1/evaluations" 401
+compose exec -T db psql -U postgres -d fraud -c "UPDATE fraud.api_principals SET enabled=true WHERE principal_id='local-demo'" >/dev/null
 # Business activation must not restart the running app or reset on the next seed/startup.
 head_hash() { compose exec -T db psql -U postgres -d fraud -Atc 'SELECT policy_hash FROM fraud.policy_head WHERE singleton'; }
 initial_hash=$(head_hash)
@@ -79,14 +123,14 @@ expect /health/ready 503
 expect /health/live 200
 compose start db
 ready
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 2
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 3
 compose stop app
 compose logs app | grep -q 'Graceful shutdown complete'
 compose up -d --no-build
 ready
 # Re-running the real migration entrypoint must preserve the installed schema.
 compose run --rm --no-deps migrate
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 2
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 3
 test "$(head_hash)" = "$active_hash"
 # Invalid operational settings must block a new application process.
 compose stop app
@@ -122,4 +166,4 @@ if compose -f compose.yaml -f "$override" up -d --no-build app; then
     exit 1
 fi
 test -z "$(compose ps --status running -q app)"
-echo 'Runtime and live-policy smoke checks passed.'
+echo 'Runtime, live-policy and protected-ingress smoke checks passed.'

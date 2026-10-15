@@ -7,7 +7,6 @@ import java.net.http.HttpResponse;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Duration;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -38,31 +37,7 @@ class RuntimeFoundationTest {
 
     @DynamicPropertySource
     static void dependencies(DynamicPropertyRegistry properties) throws SQLException {
-        try (var connection = DriverManager.getConnection(DATABASE.getJdbcUrl(), DATABASE.getUsername(), DATABASE.getPassword());
-                var statement = connection.createStatement()) {
-            statement.execute("CREATE ROLE fraud_migrator LOGIN PASSWORD 'synthetic-test-password'");
-            statement.execute("CREATE ROLE fraud_runtime LOGIN PASSWORD 'synthetic-test-password'");
-            statement.execute("CREATE ROLE fraud_policy_admin LOGIN PASSWORD 'synthetic-test-password'");
-            statement.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC");
-            statement.execute("CREATE SCHEMA fraud AUTHORIZATION fraud_migrator");
-            statement.execute("GRANT USAGE ON SCHEMA fraud TO fraud_runtime");
-        }
-        var flyway = Flyway.configure().dataSource(DATABASE.getJdbcUrl(), "fraud_migrator", PASSWORD)
-                .defaultSchema("fraud").createSchemas(false).load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(2);
-        assertThat(flyway.migrate().migrationsExecuted).isZero();
-        var yaml = new za.co.sibusiso.fraud.configuration.StrictYaml();
-        var resource = new org.springframework.core.io.ClassPathResource("config/policy.example.yaml");
-        String policyText = yaml.readText(resource);
-        var loader = new za.co.sibusiso.fraud.configuration.PolicyLoader(yaml,
-                za.co.sibusiso.fraud.configuration.RuleRegistry.of(
-                        za.co.sibusiso.fraud.configuration.BuiltInRules.definitions(), 64));
-        try (var connection = DriverManager.getConnection(DATABASE.getJdbcUrl(), "fraud_policy_admin", PASSWORD);
-                var statement = connection.prepareStatement("SELECT fraud.activate_policy(?, ?, true)")) {
-            statement.setString(1, loader.read(policyText).policyHash());
-            statement.setString(2, policyText);
-            statement.executeQuery().close();
-        }
+        TestDatabase.initialize(DATABASE);
         properties.add("spring.datasource.url", () -> DATABASE.getJdbcUrl() + "&connectTimeout=1&socketTimeout=2");
         properties.add("spring.datasource.password", () -> PASSWORD);
         properties.add("spring.data.redis.host", REDIS::getHost);
@@ -93,7 +68,7 @@ class RuntimeFoundationTest {
         assertResponse("/health/live", 200, "{\"status\":\"UP\"}");
         assertResponse("/health/ready", 200, "{\"status\":\"UP\"}");
         assertThat(get("/actuator/env").statusCode()).isEqualTo(403);
-        assertThat(get("/api/v1/evaluations").statusCode()).isEqualTo(403);
+        assertThat(get("/api/v1/evaluations").statusCode()).isEqualTo(401);
         assertThat(get("/login").statusCode()).isEqualTo(403);
         var response = client.send(HttpRequest.newBuilder(uri("/health/live"))
                 .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
@@ -118,12 +93,12 @@ class RuntimeFoundationTest {
 
     @Test
     void schemaMismatchPreventsReadiness() throws Exception {
-        changeSchemaVersion(99, 2);
+        changeSchemaVersion(99, 3);
         try {
             assertResponse("/health/ready", 503, "{\"status\":\"DOWN\"}");
             assertResponse("/health/live", 200, "{\"status\":\"UP\"}");
         } finally {
-            changeSchemaVersion(2, 99);
+            changeSchemaVersion(3, 99);
         }
     }
 

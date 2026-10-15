@@ -53,7 +53,7 @@ public record ServiceLimits(int schemaVersion, Api api, Operations operations) {
     }
 
     public record Operations(int dbPoolMaxConnectionsPerReplica, int maxConcurrentRequestsPerReplica, int httpMinSpareThreads,
-            int maxQueuedRequestsPerReplica, int httpConnectionTimeoutMillis, int poolAcquireTimeoutMillis, int lockTimeoutMillis,
+            int maxQueuedRequestsPerReplica, int httpMaxHeaderBytes, int httpConnectionTimeoutMillis, int poolAcquireTimeoutMillis, int lockTimeoutMillis,
             int statementTimeoutMillis, int redisTimeoutMillis, int commitReserveMillis,
             int maxProcessingMillis, int gracefulShutdownSeconds, int containerStopGraceSeconds,
             int maxClockRegressionMillis) {
@@ -61,6 +61,7 @@ public record ServiceLimits(int schemaVersion, Api api, Operations operations) {
             positive(dbPoolMaxConnectionsPerReplica, "Database pool");
             positive(maxConcurrentRequestsPerReplica, "Concurrent requests");
             bounded(httpMinSpareThreads, maxConcurrentRequestsPerReplica, "Minimum spare threads");
+            bounded(httpMaxHeaderBytes, 65536, "HTTP header bytes");
             positive(httpConnectionTimeoutMillis, "HTTP connection timeout");
             ContractChecks.require(maxQueuedRequestsPerReplica > 0 &&
                     (long) maxConcurrentRequestsPerReplica + maxQueuedRequestsPerReplica <= Integer.MAX_VALUE,
@@ -90,7 +91,10 @@ public record ServiceLimits(int schemaVersion, Api api, Operations operations) {
         result.put("spring.data.redis.connect-timeout", operations.redisTimeoutMillis() + "ms");
         result.put("spring.data.redis.timeout", operations.redisTimeoutMillis() + "ms");
         result.put("spring.lifecycle.timeout-per-shutdown-phase", operations.gracefulShutdownSeconds() + "s");
+        result.put("server.max-http-request-header-size", operations.httpMaxHeaderBytes() + "B");
+        result.put("server.tomcat.max-swallow-size", api.maxBodyBytes() + "B");
         result.put("server.tomcat.connection-timeout", operations.httpConnectionTimeoutMillis() + "ms");
+        result.put("server.tomcat.keep-alive-timeout", operations.httpConnectionTimeoutMillis() + "ms");
         result.put("server.tomcat.threads.max", operations.maxConcurrentRequestsPerReplica());
         result.put("server.tomcat.threads.min-spare", operations.httpMinSpareThreads());
         result.put("server.tomcat.accept-count", operations.maxQueuedRequestsPerReplica());

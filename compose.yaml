@@ -48,7 +48,7 @@ services:
       - -ec
       - |
         umask 077
-        printf 'user default on >%s +@connection\n' "$$(cat /run/secrets/spring.data.redis.password)" > /tmp/users.acl
+        printf 'user default on >%s +@connection +eval +evalsha +script|load +time +hmget +hset +pexpire ~fraud:quota:*\n' "$$(cat /run/secrets/spring.data.redis.password)" > /tmp/users.acl
         exec redis-server --aclfile /tmp/users.acl --save '' --appendonly no --maxmemory 64mb --maxmemory-policy noeviction
     mem_limit: 128m
     cpus: 0.5
@@ -67,9 +67,9 @@ services:
     mem_limit: 128m
     cpus: 0.5
     pids_limit: 64
-    secrets: [db-admin-password, db-policy-password]
+    secrets: [db-admin-password, db-policy-password, db-security-password]
     volumes:
-      - ./docker/provision-policy-role.sh:/bootstrap.sh:ro
+      - ./docker/provision-config-roles.sh:/bootstrap.sh:ro
     entrypoint: [/bin/sh, /bootstrap.sh]
     depends_on:
       db: {condition: service_healthy}
@@ -102,6 +102,24 @@ services:
     depends_on:
       migrate: {condition: service_completed_successfully}
     restart: 'no'
+  identity-seed:
+    image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    user: postgres
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    environment:
+      LOCAL_KEY_VALIDITY_DAYS: ${LOCAL_KEY_VALIDITY_DAYS:-30}
+    secrets: [db-security-password, local-api-key]
+    volumes:
+      - ./docker/seed-local-identity.sh:/seed.sh:ro
+    entrypoint: [/bin/sh, /seed.sh]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: 'no'
   app:
     <<: *app
     secrets: [spring.datasource.password, spring.data.redis.password]
@@ -117,10 +135,13 @@ services:
       retries: 5
     depends_on:
       policy-seed: {condition: service_completed_successfully}
+      identity-seed: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
 secrets:
   db-admin-password: {file: ./secrets/db-admin-password}
   db-policy-password: {file: ./secrets/db-policy-password}
+  db-security-password: {file: ./secrets/db-security-password}
+  local-api-key: {file: ./secrets/local-api-key}
   db-migration-password: {file: ./secrets/db-migration-password}
   spring.datasource.password: {file: ./secrets/spring.datasource.password}
   spring.data.redis.password: {file: ./secrets/spring.data.redis.password}

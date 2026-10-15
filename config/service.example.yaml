@@ -26,6 +26,7 @@ operations:
   maxConcurrentRequestsPerReplica: 20
   httpMinSpareThreads: 2
   maxQueuedRequestsPerReplica: 20
+  httpMaxHeaderBytes: 8192
   httpConnectionTimeoutMillis: 5000
   poolAcquireTimeoutMillis: 500
   lockTimeoutMillis: 1000
@@ -36,5 +37,5 @@ operations:
   gracefulShutdownSeconds: 30
   containerStopGraceSeconds: 45
   maxClockRegressionMillis: 1000
-# Edge ingress quotas, socket/header/idle bounds and container resource limits
-# are deployment-specific configuration.
+# Edge pre-authentication quotas, absolute upload deadlines and container
+# resource limits are deployment-specific configuration.

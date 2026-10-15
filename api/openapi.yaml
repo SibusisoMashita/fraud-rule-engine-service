@@ -2,8 +2,7 @@ openapi: 3.1.1
 info:
   title: Fraud Rule Engine Service — design contract
   version: 0.1.0-plan
-  description: Draft business contract. Health endpoints exist in the runtime foundation; business HTTP endpoints remain
-    unimplemented. Runtime readiness checks DB, Redis, schema and active policy compatibility. Policy activation is an operator CLI, not an HTTP endpoint. Monetary values are decimal strings. Service
+  description: Draft business contract. Health endpoints and protected ingress exist; admitted business requests currently return 503 FEATURE_UNAVAILABLE with NOT_ACCEPTED until processing/query handlers are implemented. Runtime readiness checks DB, Redis, schema and active policy compatibility. Policy activation is an operator CLI, not an HTTP endpoint. Monetary values are decimal strings. Service
     config may tighten published transport maxima. Rule IDs/results are extensible up to the published 64-rule bound;
     initial policy has five. Per-rule evidence is a bounded scalar map with versioned application semantics. Policy
     settings are validated on activation and loading; this contract does not certify their business validity.
@@ -260,8 +259,7 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
-      description: Generated key ID + secret. Role/scope/source permissions come from protected server configuration;
-        never send in URL.
+      description: Generated key ID (1-64 ASCII letters, digits, underscore or hyphen), dot, and 64 lowercase hexadecimal secret characters. Role/scope/source permissions, expiry and revocation are read from protected database configuration at each admission; never send in URL.
   schemas:
     Identifier:
       type: string

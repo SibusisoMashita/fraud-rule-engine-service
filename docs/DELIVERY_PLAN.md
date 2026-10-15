@@ -1,6 +1,6 @@
 # Delivery plan
 
-Stages 0–2 are implemented. Typed contracts and versioned database business policy extend the verified runtime foundation. Business-setting activation does not restart the app; infrastructure settings remain validated startup configuration. The next stage is protected ingress. Fraud evaluation remains unimplemented.
+Stages 0–3 are implemented. Protected ingress extends the typed contracts and live policy foundation with database-backed identity, permissions, shared quotas and bounded transaction decoding. Admitted requests explicitly remain unaccepted until fraud evaluation/persistence is implemented. The next stage is the first transactional evaluation flow.
 
 ## Milestones
 

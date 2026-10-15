@@ -2,7 +2,7 @@
 
 A Java backend for evaluating categorized transaction events, storing explainable fraud flags, and retrieving results through an API.
 
-**Status:** typed configuration and domain contracts are implemented, including database-backed policy activation without application restarts. Health endpoints are available. Fraud evaluation, producer authentication, quotas and business HTTP endpoints remain planned; other routes are denied. OpenAPI remains the draft business HTTP contract.
+**Status:** runtime, typed contracts, live database business policy and protected ingress are implemented. The HTTP boundary authenticates callers, authorizes roles/location sources, applies shared quotas and validates transaction input. Valid admitted business requests currently return `503 FEATURE_UNAVAILABLE` with `outcome: NOT_ACCEPTED`: fraud evaluation, persistence and business queries are the next milestones. OpenAPI remains the draft complete business contract.
 
 ## Scope
 
@@ -12,7 +12,7 @@ The policy defines five rules covering high amounts, transaction velocity, cumul
 
 ## Stack
 
-Java 21, Spring Boot 4.1.1 (MVC/Security/JDBC), HikariCP, PostgreSQL 17, Flyway, Redis 8.2, Maven 3.9.14 Wrapper and JUnit/Testcontainers. Maven versions are managed in `pom.xml`; Docker base/service images are pinned by digest. Redis is connected for readiness; shared quotas arrive with protected ingress.
+Java 21, Spring Boot 4.1.1 (MVC/Security/JDBC), HikariCP, PostgreSQL 17, Flyway, Redis 8.2, Maven 3.9.14 Wrapper and JUnit/Testcontainers. Maven versions are managed in `pom.xml`; Docker base/service images are pinned by digest. Redis enforces shared principal/route quotas through an atomic token bucket.
 
 ## Build and run
 
@@ -28,7 +28,7 @@ curl --fail http://localhost:8080/health/live
 curl --fail http://localhost:8080/health/ready
 ```
 
-Readiness may return 503 while the application starts. Only port 8080 is exposed, bound to loopback; PostgreSQL and Redis have no host ports. Use `APP_PORT=18080 docker compose up -d --no-build` if 8080 is occupied. Generated local credentials live in the ignored `secrets/` directory. The script preserves existing secrets. Compose initializes database identities, provisions the local configuration role, runs migrations and seeds policy only when no active version exists. It then starts the application. Existing active policy is preserved on subsequent starts.
+Readiness may return 503 while the application starts. Only port 8080 is exposed, bound to loopback; PostgreSQL and Redis have no host ports. Use `APP_PORT=18080 docker compose up -d --no-build` if 8080 is occupied. Generated local credentials live in the ignored `secrets/` directory. The script preserves existing secrets. Compose initializes database identities, provisions the local configuration roles, runs migrations and seeds policy and a local demo identity only when absent. It then starts the application. Existing policy and identity changes, including revocation, are preserved on subsequent starts.
 
 ## Business configuration
 
@@ -42,6 +42,17 @@ Use a working copy outside Git for business changes. Activation takes effect at 
 
 [Service limits](config/service.example.yaml) are strict startup configuration for infrastructure; changes require a coordinated restart. Protocol/storage bounds and mathematical constants are code contracts, rather than adjustable fraud thresholds.
 
+## Protected ingress
+
+The ignored `secrets/local-api-key` contains a generated local demo credential. Supply it in the `X-API-Key` header; this example passes it through standard input rather than a process argument:
+
+```sh
+printf 'header = "X-API-Key: %s"\n' "$(cat secrets/local-api-key)" |
+  curl --config - --include http://localhost:8080/api/v1/evaluations
+```
+
+The seeded identity has the ingest/read/policy roles in the `local-demo` scope, with a default 30-day validity configured by `LOCAL_KEY_VALIDITY_DAYS` on initial seeding. An authorized request currently returns `503 FEATURE_UNAVAILABLE`; missing/invalid credentials return 401, disallowed roles/sources return 403 and exhausted quotas return 429. [Operations](docs/OPERATIONS.md) covers identity changes, rotation and the implemented bounds.
+
 ## Test
 
 With `JAVA_HOME` pointing to JDK 21:
@@ -51,7 +62,7 @@ With `JAVA_HOME` pointing to JDK 21:
 ./scripts/smoke.sh
 ```
 
-`verify` runs unit/contract tests and integration tests against disposable PostgreSQL and Redis containers and packages the executable JAR. The smoke test requires the locally built image and uses a separate disposable Compose project on port 18080. It covers live policy activation, restart persistence and failure gates, then removes its containers, volumes and temporary fixtures. Set `SMOKE_PORT` when necessary. Docker must be available; integration tests are not silently skipped.
+`verify` runs unit/contract tests and integration tests against disposable PostgreSQL and Redis containers and packages the executable JAR. The smoke test requires the locally built image and uses a separate disposable Compose project on port 18080. It covers live policy activation, restart persistence and failure gates, then removes its containers, volumes and temporary fixtures. The two-instance check also uses port 18081. Set `SMOKE_PORT` and `SMOKE_PEER_PORT` when necessary. Docker must be available; integration tests are not silently skipped.
 
 For Docker contexts using a non-default Unix socket, expose that context to Testcontainers before running Maven:
 

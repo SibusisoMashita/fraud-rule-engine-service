@@ -113,6 +113,7 @@ class ConfigurationTest {
                 change(LIMITS, "lock ordering", "lockTimeoutMillis: 1000", "lockTimeoutMillis: 1501"),
                 change(LIMITS, "Hikari validation bound", "poolAcquireTimeoutMillis: 500", "poolAcquireTimeoutMillis: 499"),
                 change(LIMITS, "spare threads exceed worker limit", "httpMinSpareThreads: 2", "httpMinSpareThreads: 21"),
+                change(LIMITS, "oversized header budget", "httpMaxHeaderBytes: 8192", "httpMaxHeaderBytes: 65537"),
                 change(LIMITS, "zero connection timeout", "httpConnectionTimeoutMillis: 5000", "httpConnectionTimeoutMillis: 0"),
                 change(LIMITS, "zero pool", "dbPoolMaxConnectionsPerReplica: 10", "dbPoolMaxConnectionsPerReplica: 0"),
                 change(LIMITS, "zero socket backlog", "maxQueuedRequestsPerReplica: 20", "maxQueuedRequestsPerReplica: 0"),

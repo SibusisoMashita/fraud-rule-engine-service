@@ -1,16 +1,18 @@
 # Testing and acceptance
 
-**Status:** runtime, typed-configuration/domain-contract and live-policy tests are implemented. Business/security/concurrency/load and financial recovery acceptance remain pending. Coverage corresponds to the [delivery milestones](DELIVERY_PLAN.md).
+**Status:** runtime, typed contracts, live policy and protected-ingress tests are implemented. Fraud processing, financial concurrency/recovery, complete endpoint conformance and capacity acceptance remain pending. Coverage corresponds to the [delivery milestones](DELIVERY_PLAN.md).
 
 ## Implemented verification
 
-Unit/contract tests cover strict policy/limits validation, independent canonical hash vectors, semantic mutations, money/time boundaries, outcome algebra, result completeness and Spring registration of a test-only sixth rule definition. That extension proves configuration discovery; rule-engine execution remains a later milestone. Domain records are internal contracts; HTTP DTO adapters remain future work. OpenAPI alignment checks the published enums and extensible IDs, rather than claiming unimplemented HTTP endpoints conform.
+Unit/contract tests cover strict policy/limits validation, independent canonical hash vectors, semantic mutations, money/time boundaries, outcome algebra, result completeness and Spring registration of a test-only sixth rule definition. That extension proves configuration discovery; rule-engine execution remains a later milestone. An explicit HTTP transaction decoder enforces the static domain contract; current-policy eligibility and financial acceptance remain future work. OpenAPI alignment checks the published enums and extensible IDs, rather than claiming unimplemented HTTP endpoints conform.
 
 Real PostgreSQL/Redis integration tests exercise migrations/no-op reruns, runtime/configuration privileges, live policy selection, activation visibility/rollback/history, invalid-active-policy recovery, pool settings and dependency stalls. An overlapping-selection test preserves captured snapshots and prevents stale work from regressing the cache.
 
-The Compose smoke test covers fresh-volume initialization, the actual migration/seed/activation entrypoints, live business changes without app restart, rejected configuration, preserved policy on restart, dependency recovery, graceful shutdown, resource restrictions and startup failure gates. It uses disposable resources. The local commands are in [README](../README.md); generated reports stay under `target/`.
+Protected-ingress tests cover credential validity/revocation, live roles/source permissions, immutable scope, rotation, identity audit, safe errors, declared/chunked body limits, strict JSON, duplicate media-header rejection, principal/route quota isolation, bounded admission and permit/context cleanup. Two limiter instances share concurrent Redis quota state; refill caps, backward-clock clamping, idle expiry, wrong-type state, memory exhaustion and dependency recovery are exercised. Real connector assertions verify the projected header/body-discard, thread, connection and idle bounds. These tests admit no financial state.
 
-These checks do not establish fraud correctness, producer authorization scope, limiter behaviour, financial persistence, production capacity or successful backup restoration.
+The Compose smoke test covers fresh-volume initialization, the actual migration/seed/activation entrypoints, live business changes without app restart, rejected configuration, preserved policy on restart, dependency recovery, graceful shutdown, resource restrictions, identity-seed preservation, two application containers sharing quota state and startup failure gates. It uses disposable resources. The local commands are in [README](../README.md); generated reports stay under `target/`.
+
+These checks do not establish fraud correctness, financial-data scope isolation, financial persistence, total upload/transaction deadlines, production capacity or successful backup restoration.
 
 ## Test boundaries
 
@@ -26,7 +28,7 @@ The contracts under test are defined in [Architecture](ARCHITECTURE.md), [Rules]
 
 ## Scenario coverage
 
-SC identifiers connect scenarios to tests and reports. Contract-level checks provide partial coverage for SC-01, SC-03, SC-14, SC-19 and SC-27; runtime dependency/migration checks contribute to SC-08, SC-09, SC-10 and SC-13. No scenario below is fully accepted yet. The matrix covers identified risks rather than every possible failure.
+SC identifiers connect scenarios to tests and reports. Contract-level checks provide partial coverage for SC-01, SC-03, SC-14, SC-19 and SC-27; runtime dependency/migration checks contribute to SC-08, SC-09, SC-10 and SC-13. Protected-ingress checks add partial coverage for SC-01, SC-02, SC-10, SC-11, SC-12 and SC-14. No scenario below is fully accepted yet. The matrix covers identified risks rather than every possible failure.
 
 | ID | Risk / acceptance invariant | Required evidence |
 | --- | --- | --- |
