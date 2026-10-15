@@ -1,8 +1,8 @@
 openapi: 3.1.1
 info:
-  title: Fraud Rule Engine Service — design contract
-  version: 0.1.0-plan
-  description: Draft business contract. Transaction POST with all five fraud-rule evaluations and scoped event GET are implemented. List/policy-query handlers remain 503 FEATURE_UNAVAILABLE. New committed input returns 201, identical replay 200, and changed content 409. Runtime readiness checks DB, Redis, schema and active policy compatibility. Policy activation is an operator CLI, not an HTTP endpoint. Monetary values are decimal strings. Service
+  title: Fraud Rule Engine Service
+  version: 0.1.0
+  description: Transaction and query contract. Transaction POST with all five fraud-rule evaluations, scoped event GET, evaluation pages and active rule-policy inspection are implemented. New committed input returns 201, identical replay 200, and changed content 409. Runtime readiness checks DB, Redis, schema and active policy compatibility. Policy activation is an operator CLI, not an HTTP endpoint. Monetary values are decimal strings. Service
     config may tighten published transport maxima. Rule IDs/results are extensible up to the published 64-rule bound;
     initial policy has five. Per-rule evidence is a bounded scalar map with versioned application semantics. Policy
     settings are validated on activation and loading; this contract does not certify their business validity.
@@ -129,7 +129,7 @@ paths:
       summary: List a bounded live keyset page
       description: Ascending (acceptedAt,id). Not a stable snapshot or complete reconciliation feed under concurrent
         commits. Date interval [acceptedFrom,acceptedTo); default range one day, configured maximum 31 days. Cursor
-        binds filters and upper bound; repeat explicit filters unchanged.
+        binds scope, filters, page size and resolved date bounds; repeat explicit filters and page size unchanged. Default dates are resolved from the database clock on the first page. Invalid or changed cursors return 400. Unknown, empty and duplicate query parameters are rejected.
       x-required-role: read
       parameters:
       - name: customerId
@@ -197,6 +197,7 @@ paths:
     get:
       operationId: getRules
       summary: Inspect non-secret active policy
+      description: One captured active policy hash and all typed rule settings, including disabled rules. Requires POLICY; no credentials, startup limits or source YAML are returned. Changes are visible without restarting. Unknown query parameters are rejected.
       x-required-role: policy
       responses:
         '200':
@@ -210,6 +211,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RulesView'
+        '400':
+          $ref: '#/components/responses/Problem400'
         '401':
           $ref: '#/components/responses/Problem401'
         '403':

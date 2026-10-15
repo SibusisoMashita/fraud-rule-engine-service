@@ -42,6 +42,7 @@ class ProtectedIngressTest {
             .withExposedPorts(6379).withCommand("redis-server", "--requirepass", PASSWORD, "--maxmemory-policy", "noeviction");
     @DynamicPropertySource static void dependencies(DynamicPropertyRegistry properties) throws Exception {
         TestDatabase.initialize(DATABASE);
+        properties.add("fraud.cursor-signing-key",()->"a".repeat(64));
         properties.add("spring.datasource.url", DATABASE::getJdbcUrl);
         properties.add("spring.datasource.password", () -> PASSWORD);
         properties.add("spring.data.redis.host", REDIS::getHost);
@@ -85,7 +86,7 @@ class ProtectedIngressTest {
         assertStatus(call("GET", "/api/v1/evaluations", "unknown."+SECRET, null),401,"INVALID_CREDENTIAL");
         assertStatus(call("GET", "/api/v1/evaluations", identity.keyId()+"."+"b".repeat(64), null),401,"INVALID_CREDENTIAL");
         var admitted = call("GET", "/api/v1/evaluations", identity.key(), null);
-        assertStatus(admitted,503,"FEATURE_UNAVAILABLE");
+        assertQuery(admitted);
         assertThat(admitted.headers().firstValue("set-cookie")).isEmpty();
         assertThat(admitted.headers().firstValue("Cache-Control")).contains("no-store");
         var duplicate = http.send(request("GET", "/api/v1/evaluations", identity.key(), null).header("X-API-Key", identity.key()).build(), HttpResponse.BodyHandlers.ofString());
@@ -108,7 +109,7 @@ class ProtectedIngressTest {
         assertThat(authenticator.authenticate(first.key()).permissionVersion()).isEqualTo(version+1);
         assertAccepted(call("POST","/api/v1/transactions",first.key(),BODY));
         assertStatus(call("GET","/api/v1/evaluations",first.key(),null),403,"FORBIDDEN");
-        assertStatus(call("GET","/api/v1/rules",first.key(),null),503,"FEATURE_UNAVAILABLE");
+        assertQuery(call("GET","/api/v1/rules",first.key(),null));
         var forged = http.send(request("POST","/api/v1/transactions",first.key(),BODY).header("X-Scope",second.scope())
                 .header("X-Forwarded-For","127.0.0.1").build(),HttpResponse.BodyHandlers.ofString());
         assertAccepted(forged);
@@ -162,8 +163,8 @@ class ProtectedIngressTest {
         String key = SharedRateLimiter.key(caller, IngressRoute.INGEST);
         redis.opsForHash().putAll(key, Map.of("tokens", "0", "time", Long.toString(System.currentTimeMillis() + 60000)));
         assertStatus(call("POST", "/api/v1/transactions", first.key(), BODY), 429, "RATE_LIMITED");
-        assertStatus(call("GET", "/api/v1/evaluations", first.key(), null), 503, "FEATURE_UNAVAILABLE");
-        assertStatus(call("GET", "/api/v1/rules", first.key(), null), 503, "FEATURE_UNAVAILABLE");
+        assertQuery(call("GET", "/api/v1/evaluations", first.key(), null));
+        assertQuery(call("GET", "/api/v1/rules", first.key(), null));
         assertAccepted(call("POST", "/api/v1/transactions", second.key(), BODY));
         var forged = http.send(request("POST", "/api/v1/transactions", first.key(), BODY)
                 .header("X-Principal-ID", second.principal()).header("X-Scope", second.scope())
@@ -173,7 +174,7 @@ class ProtectedIngressTest {
         redis.opsForHash().putAll(readKey, Map.of("tokens", "0", "time", Long.toString(System.currentTimeMillis() + 60000)));
         assertStatus(call("GET", "/api/v1/evaluations", first.key(), null), 429, "RATE_LIMITED");
         assertStatus(call("GET", "/api/v1/transactions/evt-1", first.key(), null), 429, "RATE_LIMITED");
-        assertStatus(call("GET", "/api/v1/rules", first.key(), null), 503, "FEATURE_UNAVAILABLE");
+        assertQuery(call("GET", "/api/v1/rules", first.key(), null));
     }
 
     @Test void twoLimiterInstancesShareAtomicQuotaAndRotationCannotResetIt() throws Exception {
@@ -272,6 +273,9 @@ class ProtectedIngressTest {
         var body=JsonMapper.builder().build().readTree(response.body());
         assertThat(body.get("evaluation").get("decision").asString()).isIn("CLEAR","FLAGGED","INDETERMINATE");
     }
+    private void assertQuery(HttpResponse<String> response) {
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
+    }
     private void assertStatus(HttpResponse<String> response,int status,String code) {
         assertThat(response.statusCode()).as(response.body()).isEqualTo(status);
         assertThat(response.headers().firstValue("content-type")).hasValueSatisfying(type->assertThat(type).startsWith("application/problem+json"));
@@ -281,6 +285,6 @@ class ProtectedIngressTest {
         assertThat(problem.get("correlationId").asString()).isEqualTo(response.headers().firstValue("X-Correlation-ID").orElseThrow());
         assertThat(response.body()).doesNotContain(SECRET,"synthetic-test-password","SQLException","redis://");
         if(status==401) assertThat(response.headers().firstValue("WWW-Authenticate")).contains("ApiKey");
-        if(status==429 || code.endsWith("UNAVAILABLE") && !code.equals("FEATURE_UNAVAILABLE")) assertThat(response.headers().firstValue("Retry-After")).contains("1");
+        if(status==429 || code.endsWith("UNAVAILABLE")) assertThat(response.headers().firstValue("Retry-After")).contains("1");
     }
 }

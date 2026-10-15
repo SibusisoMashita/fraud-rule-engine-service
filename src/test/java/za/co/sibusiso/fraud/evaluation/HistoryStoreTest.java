@@ -83,6 +83,23 @@ class HistoryStoreTest {
         System.out.println("History query fixture: 6000 receipts; 300 target rows; count="
                 +json.readTree(countPlan).findValues("Index Name")+"; spend="+json.readTree(spendPlan).findValues("Index Name"));
     }
+    @Test void queryKeysUseOrderedIndexesAndHydrateOnlyTheBoundedPage() {
+        String scope=fixtureScope();bulk(scope,6000,20);jdbc.execute("VACUUM ANALYZE fraud.evaluations");
+        var queries=new JdbcEvaluationQueryStore(jdbc);
+        for(String customer:new String[]{null,"customer-1"}){
+            var window=new EvaluationQuery.Window(customer,null,accepted.minusSeconds(1),accepted.plusSeconds(1),20,null);
+            var page=queries.page(scope,window);assertThat(page).hasSize(21);
+            assertThat(page).allSatisfy(row->assertThat(row.position().acceptedAt()).isEqualTo(accepted));
+            String plan=jdbc.queryForObject("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+JdbcEvaluationQueryStore.keysSql(window),String.class,
+                    JdbcEvaluationQueryStore.arguments(scope,window));
+            assertThat(plan).contains("Index Scan").contains(customer==null?"evaluations_scope_accepted_id":"evaluations_customer_accepted_id");
+        }
+        var flagged=new EvaluationQuery.Window(null,za.co.sibusiso.fraud.domain.EvaluationOutcome.Decision.FLAGGED,
+                accepted.minusSeconds(1),accepted.plusSeconds(1),20,null);
+        String plan=jdbc.queryForObject("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+JdbcEvaluationQueryStore.keysSql(flagged),String.class,
+                JdbcEvaluationQueryStore.arguments(scope,flagged));
+        assertThat(plan).contains("evaluations_decision_accepted_id");assertThat(queries.page(scope,flagged)).isEmpty();
+    }
     @Test void smallPaymentsUseAnOpenEventTimeWindowInclusiveAmountAndCapturedWatermark() {
         String scope=fixtureScope(),other=fixtureScope();
         sequenceRow(scope,"customer","lower","ZAR","1",accepted.minusSeconds(60),1);

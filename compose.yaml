@@ -122,7 +122,7 @@ services:
     restart: 'no'
   app:
     <<: *app
-    secrets: [spring.datasource.password, spring.data.redis.password]
+    secrets: [spring.datasource.password, spring.data.redis.password, fraud.cursor-signing-key]
     ports: ['127.0.0.1:${APP_PORT:-8080}:8080']
     volumes:
       - ./config/service.example.yaml:/app/config/service.example.yaml:ro
@@ -138,6 +138,7 @@ services:
       identity-seed: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
 secrets:
+  fraud.cursor-signing-key: {file: ./secrets/fraud.cursor-signing-key}
   db-admin-password: {file: ./secrets/db-admin-password}
   db-policy-password: {file: ./secrets/db-policy-password}
   db-security-password: {file: ./secrets/db-security-password}

@@ -22,9 +22,12 @@ public final class IngressController {
     private final TransactionDecoder decoder;
     private final TransactionService transactions;
     private final int identifierLimit;
-    public IngressController(ServiceLimits limits, TransactionService transactions) {
+    private final za.co.sibusiso.fraud.evaluation.EvaluationQueryService queries;
+    private final EvaluationQueryDecoder queryDecoder;
+    public IngressController(ServiceLimits limits, TransactionService transactions, za.co.sibusiso.fraud.evaluation.EvaluationQueryService queries) {
         decoder = new TransactionDecoder(limits); this.transactions = transactions;
         identifierLimit = limits.api().maxIdentifierLength();
+        this.queries=queries;queryDecoder=new EvaluationQueryDecoder(limits.api());
     }
 
     @PostMapping("/api/v1/transactions")
@@ -57,6 +60,16 @@ public final class IngressController {
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(transactions.get(caller, eventId, deadline::remainingMillis).json());
     }
 
-    @GetMapping({"/api/v1/evaluations", "/api/v1/rules"})
-    public void query() { throw new ApiFailure(503, "FEATURE_UNAVAILABLE"); }
+    @GetMapping("/api/v1/evaluations")
+    public ResponseEntity<String> evaluations(HttpServletRequest request,@AuthenticationPrincipal Caller caller){
+        var query=queryDecoder.decode(request.getParameterMap());
+        var deadline=(RequestDeadline)request.getAttribute(RequestDeadline.ATTRIBUTE);
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(queries.list(caller,query,deadline::remainingMillis));
+    }
+    @GetMapping("/api/v1/rules")
+    public ResponseEntity<String> rules(HttpServletRequest request,@AuthenticationPrincipal Caller caller){
+        if(request.getQueryString()!=null)throw new ApiFailure(400,"UNSUPPORTED_QUERY");
+        var deadline=(RequestDeadline)request.getAttribute(RequestDeadline.ATTRIBUTE);
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(queries.rules(caller,deadline::remainingMillis));
+    }
 }

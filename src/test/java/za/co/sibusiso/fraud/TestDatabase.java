@@ -9,7 +9,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 public final class TestDatabase {
     public static final String PASSWORD = "synthetic-test-password";
     private TestDatabase() { }
-    public static void initialize(PostgreSQLContainer DATABASE) throws SQLException {
+    public static void initialize(PostgreSQLContainer DATABASE) throws SQLException { initialize(DATABASE,8); }
+    public static void initialize(PostgreSQLContainer DATABASE,int version) throws SQLException {
         try (var connection = DriverManager.getConnection(DATABASE.getJdbcUrl(), DATABASE.getUsername(), DATABASE.getPassword());
                 var statement = connection.createStatement()) {
             statement.execute("CREATE ROLE fraud_migrator LOGIN PASSWORD 'synthetic-test-password'");
@@ -21,7 +22,7 @@ public final class TestDatabase {
             statement.execute("GRANT USAGE ON SCHEMA fraud TO fraud_runtime");
         }
         var flyway = Flyway.configure().dataSource(DATABASE.getJdbcUrl(), "fraud_migrator", PASSWORD)
-                .defaultSchema("fraud").createSchemas(false).load();
+                .defaultSchema("fraud").createSchemas(false).target(Integer.toString(version)).load();
         assertThat(Flyway.configure().dataSource(DATABASE.getJdbcUrl(), "fraud_migrator", PASSWORD)
                 .defaultSchema("fraud").createSchemas(false).target("2").load().migrate().migrationsExecuted).isEqualTo(2);
         var yaml = new za.co.sibusiso.fraud.configuration.StrictYaml();
@@ -36,7 +37,7 @@ public final class TestDatabase {
             statement.setString(2, policyText);
             statement.executeQuery().close();
         }
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(5);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(version-2);
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         try (var connection = DriverManager.getConnection(DATABASE.getJdbcUrl(), "fraud_runtime", PASSWORD);
                 var statement = connection.createStatement();

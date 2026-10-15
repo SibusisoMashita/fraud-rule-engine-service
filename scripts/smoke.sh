@@ -61,16 +61,17 @@ auth_expect() {
     code=$(printf 'header = "X-API-Key: %s"\n' "$(cat secrets/local-api-key)" |
         curl --config - -sS --max-time 5 -o "$response_fixture" -w '%{http_code}' "$endpoint")
     test "$code" = "$expected" || { echo "Protected endpoint returned $code; expected $expected" >&2; return 1; }
+    if [ "$expected" = 200 ]; then grep -Eq '"(items|rules)"[[:space:]]*:' "$response_fixture"; return; fi
     case "$expected" in
         401) expected_code=INVALID_CREDENTIAL;;
         429) expected_code=RATE_LIMITED;;
-        503) expected_code=FEATURE_UNAVAILABLE;;
+        403) expected_code=FORBIDDEN;;
         *) echo 'Unsupported protected smoke expectation' >&2; return 1;;
     esac
     grep -Eq "\"code\"[[:space:]]*:[[:space:]]*\"$expected_code\"" "$response_fixture"
     grep -Eq '"outcome"[[:space:]]*:[[:space:]]*"NOT_ACCEPTED"' "$response_fixture"
 }
-auth_expect "$base/api/v1/evaluations" 503
+auth_expect "$base/api/v1/evaluations" 200
 compose exec -T redis sh -ec 'REDISCLI_AUTH="$(cat /run/secrets/spring.data.redis.password)" redis-cli HSET outside:key tokens 1' | grep -q NOPERM
 peer_port=${SMOKE_PEER_PORT:-18081}
 peer_id=$(compose run -d --no-deps -p "127.0.0.1:$peer_port:8080" app)
@@ -81,7 +82,7 @@ until curl -fsS --max-time 5 "$peer_base/health/ready" >/dev/null 2>&1; do
     test "$attempt" -lt 90 || { echo 'Peer readiness timed out' >&2; exit 1; }
     sleep 1
 done
-auth_expect "$peer_base/api/v1/evaluations" 503
+auth_expect "$peer_base/api/v1/evaluations" 200
 api_request() {
     api_origin=$1 api_method=$2 api_path=$3 api_input=$4 api_output=$5
     if [ "$api_method" = POST ]; then
@@ -202,12 +203,38 @@ for sequence_setting in count small window large disabled; do
     test "$(docker inspect -f '{{.State.StartedAt}}' "$peer_id")" = "$history_peer_started"
     sed "s/sequence-large\"/sequence-live-$sequence_setting\"/" "$flow_tmp/sequence-large.json" > "$flow_tmp/sequence-live.json"
     test "$(api_request "$base" POST /api/v1/transactions "$flow_tmp/sequence-live.json" "$flow_tmp/sequence-live-response.json")" = 201
+    test "$(api_request "$peer_base" GET /api/v1/rules /dev/null "$flow_tmp/rules-live.json")" = 200
+    query_hash=$(compose exec -T db psql -U postgres -d fraud -Atc 'SELECT policy_hash FROM fraud.policy_head WHERE singleton')
+    grep -q "\"policyHash\":\"$query_hash\"" "$flow_tmp/rules-live.json"
+    case "$sequence_setting" in
+        count) grep -q '"minSmallPayments":4' "$flow_tmp/rules-live.json";;
+        small) grep -q '"ZAR":"49.99"' "$flow_tmp/rules-live.json";;
+        window) grep -q '"windowSeconds":1' "$flow_tmp/rules-live.json";;
+        large) grep -q '"ZAR":"6000"' "$flow_tmp/rules-live.json";;
+        disabled) grep -q '"enabled":false' "$flow_tmp/rules-live.json";;
+    esac
     sequence_status=NO_MATCH
     if [ "$sequence_setting" = disabled ]; then sequence_status=DISABLED; fi
     compose exec -T db psql -U postgres -d fraud -Atc "SELECT status FROM fraud.rule_results WHERE scope='local-demo' AND event_id='sequence-live-$sequence_setting' AND rule_id='SMALL_PAYMENT_BURST_THEN_LARGE'" | grep -qx "$sequence_status"
     test "$(api_request "$peer_base" POST /api/v1/transactions "$flow_tmp/sequence-large.json" "$flow_tmp/sequence-replay.json")" = 200
     cmp -s "$flow_tmp/sequence-large-response.json" "$flow_tmp/sequence-replay.json"
 done
+# Signed navigation continues on either replica and cannot change its original filters.
+query_path='/api/v1/evaluations?customerId=history-customer&pageSize=2'
+test "$(api_request "$base" GET "$query_path" /dev/null "$flow_tmp/query-first.json")" = 200
+test "$(grep -o '"eventId"' "$flow_tmp/query-first.json" | wc -l | tr -d ' ')" = 2
+query_cursor=$(sed -n 's/.*"nextCursor":"\([^" ]*\)".*/\1/p' "$flow_tmp/query-first.json")
+test -n "$query_cursor"
+test "$(api_request "$peer_base" GET "$query_path&cursor=$query_cursor" /dev/null "$flow_tmp/query-next.json")" = 200
+grep -q '"eventId":"history-3"' "$flow_tmp/query-next.json"
+grep -q '"eventId":"history-4"' "$flow_tmp/query-next.json"
+test "$(api_request "$base" GET "$query_path&cursor=x$query_cursor" /dev/null "$flow_tmp/query-tampered.json")" = 400
+test "$(api_request "$base" GET "/api/v1/evaluations?customerId=other&pageSize=2&cursor=$query_cursor" /dev/null "$flow_tmp/query-filter.json")" = 400
+test "$(api_request "$base" GET '/api/v1/evaluations?pageSize=101' /dev/null "$flow_tmp/query-limit.json")" = 422
+compose exec -T db psql -U postgres -d fraud -c "UPDATE fraud.api_principals SET roles=ARRAY['INGEST','READ'] WHERE principal_id='local-demo'" >/dev/null
+auth_expect "$base/api/v1/rules" 403
+auth_expect "$base/api/v1/evaluations" 200
+compose exec -T db psql -U postgres -d fraud -c "UPDATE fraud.api_principals SET roles=ARRAY['INGEST','READ','POLICY'] WHERE principal_id='local-demo'" >/dev/null
 principal_hash=$(printf local-demo | openssl dgst -sha256 | awk '{print $NF}')
 quota_key="fraud:quota:$principal_hash:READ"
 quota_time=$(( $(date +%s) * 1000 + 60000 ))
@@ -263,14 +290,14 @@ expect /health/ready 503
 expect /health/live 200
 compose start db
 ready
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 7
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 8
 compose stop app
 compose logs app | grep -q 'Graceful shutdown complete'
 compose up -d --no-build
 ready
 # Re-running the real migration entrypoint must preserve the installed schema.
 compose run --rm --no-deps migrate
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 7
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 8
 test "$(head_hash)" = "$active_hash"
 test "$(api_request "$base" GET /api/v1/transactions/smoke-race /dev/null "$flow_tmp/restarted.json")" = 200
 cmp -s "$flow_tmp/first.json" "$flow_tmp/restarted.json"
@@ -278,6 +305,10 @@ test "$(api_request "$base" GET /api/v1/transactions/travel-jhb /dev/null "$flow
 cmp -s "$flow_tmp/travel-jhb-response.json" "$flow_tmp/travel-restarted.json"
 test "$(api_request "$base" GET /api/v1/transactions/sequence-large /dev/null "$flow_tmp/sequence-restarted.json")" = 200
 cmp -s "$flow_tmp/sequence-large-response.json" "$flow_tmp/sequence-restarted.json"
+test "$(api_request "$base" GET "$query_path&cursor=$query_cursor" /dev/null "$flow_tmp/query-restarted.json")" = 200
+cmp -s "$flow_tmp/query-next.json" "$flow_tmp/query-restarted.json"
+test "$(api_request "$base" GET /api/v1/rules /dev/null "$flow_tmp/rules-restarted.json")" = 200
+grep -q "\"policyHash\":\"$active_hash\"" "$flow_tmp/rules-restarted.json"
 # Documentation exposure is a startup setting; disabling it leaves API guards intact.
 compose stop app
 compose rm -f app
@@ -294,6 +325,20 @@ expect /swagger-ui/index.html 403
 expect /openapi.yaml 403
 expect /api/v1/evaluations 401
 compose stop app
+compose rm -f app
+# Invalid cursor credentials must block a new process; there is no default signing key.
+cat > "$override" <<'YAML'
+services:
+  app:
+    environment:
+      JAVA_TOOL_OPTIONS: -Dfraud.cursor-signing-key=invalid
+YAML
+if compose -f compose.yaml -f "$override" up -d --no-build --wait --wait-timeout 30 app; then
+    echo 'Invalid signing key unexpectedly started' >&2
+    exit 1
+fi
+test -z "$(compose ps --status running -q app)"
+compose logs app | grep -q 'Cursor signing key'
 compose rm -f app
 # Invalid operational settings must block a new application process.
 compose stop app
@@ -329,4 +374,4 @@ if compose -f compose.yaml -f "$override" up -d --no-build app; then
     exit 1
 fi
 test -z "$(compose ps --status running -q app)"
-echo 'Runtime, live-policy, protected-ingress, transactional-evaluation, historical-rule, impossible-travel, payment-sequence and Swagger smoke checks passed.'
+echo 'Runtime, live-policy, protected-ingress, transactional-evaluation, historical-rule, impossible-travel, payment-sequence, evaluation-query, active-policy and Swagger smoke checks passed.'

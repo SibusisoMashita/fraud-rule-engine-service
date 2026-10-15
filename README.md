@@ -2,7 +2,7 @@
 
 A Java backend for evaluating categorized transaction events, storing explainable fraud flags, and retrieving results through an API.
 
-**Status:** the transactional flow and five rules are implemented: authenticated `POST /api/v1/transactions` evaluates high amount, transaction velocity, cumulative spend, impossible travel and a small-payment burst followed by a large payment and commits the event, evaluation and complete rule-result set together. Identical retries return the original result; `GET /api/v1/transactions/{eventId}` retrieves it within the caller's scope. List/policy-query endpoints remain planned.
+**Status:** the transactional flow and five rules are implemented: authenticated `POST /api/v1/transactions` evaluates high amount, transaction velocity, cumulative spend, impossible travel and a small-payment burst followed by a large payment and commits the event, evaluation and complete rule-result set together. Identical retries return the original result; `GET /api/v1/transactions/{eventId}` retrieves it within the caller's scope. Evaluation pages and active rule-policy inspection are available through protected GET endpoints.
 
 ## Scope
 
@@ -51,11 +51,11 @@ printf 'header = "X-API-Key: %s"\n' "$(cat secrets/local-api-key)" |
   curl --config - --include http://localhost:8080/api/v1/evaluations
 ```
 
-The seeded identity has the ingest/read/policy roles in the `local-demo` scope, with a default 30-day validity configured by `LOCAL_KEY_VALIDITY_DAYS` on initial seeding. List-evaluation and rule-inspection routes currently return `503 FEATURE_UNAVAILABLE`; missing/invalid credentials return 401, disallowed roles/sources return 403 and exhausted quotas return 429. [Operations](docs/OPERATIONS.md) covers identity changes, rotation and the implemented bounds.
+The seeded identity has the ingest/read/policy roles in the `local-demo` scope, with a default 30-day validity configured by `LOCAL_KEY_VALIDITY_DAYS` on initial seeding. Evaluation pages require READ and rule-policy inspection requires POLICY. Missing/invalid credentials return 401, disallowed roles/sources return 403 and exhausted quotas return 429. [Operations](docs/OPERATIONS.md) covers identity changes, rotation and the implemented bounds.
 
 ## Swagger UI
 
-Open [Swagger UI](http://localhost:8080/swagger-ui/index.html) after startup. It serves the maintained [OpenAPI contract](api/openapi.yaml) from the application with pinned local assets. Use **Authorize** and the generated local key for protected requests; authorization is not persisted across page reloads. The UI has no remote validator. API permissions and quotas apply to requests made from Swagger too. Endpoints marked as planned still return 503.
+Open [Swagger UI](http://localhost:8080/swagger-ui/index.html) after startup. It serves the maintained [OpenAPI contract](api/openapi.yaml) from the application with pinned local assets. Use **Authorize** and the generated local key for protected requests; authorization is not persisted across page reloads. The UI has no remote validator. API permissions and quotas apply to requests made from Swagger too.
 
 `api.documentationEnabled` enables public GET access to the UI and `/openapi.yaml` in the local sample. Set it to false in startup configuration and restart to disable these routes; externally exposed deployments should choose documentation access deliberately.
 
@@ -79,6 +79,19 @@ A new committed event returns 201 and `Location`; an identical POST returns 200 
 
 Existing volumes retain their active policy. Migrations provide receipt-history, physical instrument/event-time and small-payment sequence indexes. Activate a validated working copy to enable additional rules on an existing installation. [Operations](docs/OPERATIONS.md) describes upgrades; seeding never silently overwrites business settings.
 
+## Query evaluations and inspect policy
+
+```sh
+printf 'header = "X-API-Key: %s"\n' "$(cat secrets/local-api-key)" |
+  curl --config - --include 'http://localhost:8080/api/v1/evaluations?customerId=demo-customer&pageSize=2'
+printf 'header = "X-API-Key: %s"\n' "$(cat secrets/local-api-key)" |
+  curl --config - --include http://localhost:8080/api/v1/rules
+```
+
+Evaluation pages support `customerId`, `decision`, `acceptedFrom`, `acceptedTo`, `pageSize` and `cursor`. They use acceptance time in an inclusive-from/exclusive-to interval, ordered by `(acceptedAt,id)`. Defaults and bounds come from startup service limits. Follow `nextCursor` with the original filters and page size unchanged; it pins omitted date defaults and is signed for the caller's scope. Cursor state is navigation metadata, not an authentication credential or encrypted data. Pagination is live traversal: a late commit behind a cursor can be missed, so reconciliation uses scoped event lookups after outstanding work settles.
+
+`GET /api/v1/rules` returns the active policy hash and typed rule metadata/settings, including disabled rules. It reflects business activation without restarting and excludes credentials, infrastructure configuration and source YAML. Policy writes continue to use the operator CLI.
+
 ## Test
 
 With `JAVA_HOME` pointing to JDK 21:
@@ -88,7 +101,7 @@ With `JAVA_HOME` pointing to JDK 21:
 ./scripts/smoke.sh
 ```
 
-`verify` runs unit/contract tests and integration tests against disposable PostgreSQL and Redis containers and packages the executable JAR. The smoke test requires the locally built image and uses a separate disposable Compose project on port 18080. It covers two-process duplicate races, replay/conflict, live thresholds/toggles, cross-process customer-history totals, physical travel, small-payment sequences, Swagger exposure, persisted retrieval and failure gates, then removes its containers, volumes and temporary fixtures. The two-instance check also uses port 18081. Set `SMOKE_PORT` and `SMOKE_PEER_PORT` when necessary. Docker must be available; integration tests are not silently skipped.
+`verify` runs unit/contract tests and integration tests against disposable PostgreSQL and Redis containers and packages the executable JAR. The smoke test requires the locally built image and uses a separate disposable Compose project on port 18080. It covers two-process duplicate races, replay/conflict, live thresholds/toggles, cross-process customer-history totals, physical travel, small-payment sequences, cross-replica signed pagination, live policy inspection, Swagger exposure, persisted retrieval and failure gates, then removes its containers, volumes and temporary fixtures. The two-instance check also uses port 18081. Set `SMOKE_PORT` and `SMOKE_PEER_PORT` when necessary. Docker must be available; integration tests are not silently skipped.
 
 For Docker contexts using a non-default Unix socket, expose that context to Testcontainers before running Maven:
 
@@ -103,7 +116,7 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 | --- | --- |
 | [Architecture](docs/ARCHITECTURE.md) | Boundaries, data correctness, security, scaling and failure trade-offs |
 | [Rules](docs/RULES.md) | Exact predicates, outcomes, configuration and rule extension |
-| [OpenAPI](api/openapi.yaml) | Draft HTTP contract, schemas, errors and endpoint permissions |
+| [OpenAPI](api/openapi.yaml) | HTTP contract, schemas, errors and endpoint permissions |
 | [Testing](docs/TESTING.md) | Acceptance criteria, risk scenarios and required release evidence |
 | [Operations](docs/OPERATIONS.md) | Local lifecycle, configuration and failure diagnosis |
 | [Delivery plan](docs/DELIVERY_PLAN.md) | Implementation milestones and acceptance evidence |

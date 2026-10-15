@@ -42,6 +42,7 @@ class ImpossibleTravelEvaluationTest {
             .withExposedPorts(6379).withCommand("redis-server","--requirepass",PASSWORD);
     @DynamicPropertySource static void dependencies(DynamicPropertyRegistry properties) throws Exception {
         TestDatabase.initialize(DATABASE);
+        properties.add("fraud.cursor-signing-key",()->"a".repeat(64));
         properties.add("spring.datasource.url",DATABASE::getJdbcUrl);properties.add("spring.datasource.password",()->PASSWORD);
         properties.add("spring.data.redis.host",REDIS::getHost);properties.add("spring.data.redis.port",()->REDIS.getMappedPort(6379));
         properties.add("spring.data.redis.password",()->PASSWORD);

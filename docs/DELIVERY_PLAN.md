@@ -1,6 +1,6 @@
 # Delivery plan
 
-Stages 0–7 are implemented. Customer-locked evaluations include velocity, cumulative spend, trusted physical impossible travel and the small-payment sequence. Business thresholds, windows, evidence filters and rule toggles remain live database policy. Swagger UI serves the maintained contract. The next stage adds evaluation queries and active-policy inspection.
+Stages 0–8 are implemented. Customer-locked evaluations include velocity, cumulative spend, trusted physical impossible travel and the small-payment sequence. Business thresholds, windows, evidence filters and rule toggles remain live database policy. Swagger UI serves the maintained contract. Protected evaluation pages and live active-policy inspection are available. The next stage covers operational verification and measured capacity.
 
 ## Milestones
 
@@ -14,7 +14,7 @@ Stages 0–7 are implemented. Customer-locked evaluations include velocity, cumu
 | 5. Historical rules | Velocity and cumulative debit spend | Window/currency boundaries, multi-instance history correctness and query measurements |
 | 6. Impossible travel | Trusted physical evidence, distance/time/uncertainty and bounded candidates | Plausible flights, equal-time/delayed events, different instruments, bounded candidates, live policy and missing-reference cases; packaged Swagger access checks |
 | 7. Payment sequence | Small-payment burst followed by a large payment | Open event-time/amount/count boundaries, currency/scope/watermark isolation, live policy, concurrent arrivals, rollback/replay and two-instance Docker checks |
-| 8. Evaluation queries | Authorized filtered keyset pages and active-policy inspection | Runtime contract tests, access isolation, bounded queries and live-pagination behaviour |
+| 8. Evaluation queries | Authorized filtered keyset pages and active-policy inspection | Strict filter/range tests, scope-bound signed cursors, indexed page plans, migration preservation, live policy inspection and cross-instance/restart Docker checks |
 | 9. Operational verification | Recovery, deployment compatibility, resource limits and measured capacity | Fault/kill/migration/restore drills, two-instance tests, benchmark reports and security scans |
 | 10. Release validation | Complete usage documentation, examples and limitations | Clean-clone build/run/test demonstration and the release criteria in [Testing](TESTING.md) |
 

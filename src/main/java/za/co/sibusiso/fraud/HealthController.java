@@ -33,7 +33,7 @@ class HealthController {
         try {
             policy.current();
             Boolean schemaReady = jdbc.queryForObject(
-                    "SELECT EXISTS (SELECT 1 FROM fraud.service_metadata WHERE version = 7)", Boolean.class);
+                    "SELECT EXISTS (SELECT 1 FROM fraud.service_metadata WHERE version = 8)", Boolean.class);
             String pong = redis.execute(connection -> connection.ping(), true);
             if (Boolean.TRUE.equals(schemaReady) && "PONG".equals(pong)) {
                 return ResponseEntity.ok(Map.of("status", "UP"));

@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 umask 077
 mkdir -p secrets
 chmod 700 secrets
-for name in db-admin-password db-migration-password db-policy-password db-security-password spring.datasource.password spring.data.redis.password; do
+for name in db-admin-password db-migration-password db-policy-password db-security-password spring.datasource.password spring.data.redis.password fraud.cursor-signing-key; do
     if [ ! -e "secrets/$name" ]; then
         openssl rand -hex 32 > "secrets/$name"
     fi

@@ -78,13 +78,13 @@ The local seed uses `local-demo` with all three roles and both verified physical
 | Quota | Stable principal/route bucket shared by replicas and rotated keys; exhaustion: 429 with `Retry-After` |
 | Dependencies/capacity | Admission dependency, quota-script, Redis memory or permit failure: 503 with a retry hint; cached/open access is not used |
 | Transactions | New committed POST: 201; identical replay: 200; changed content or instrument owner: 409; own-scope GET: 200 or masked 404 |
-| Remaining queries | Evaluation-list and rule-inspection handlers remain 503 `FEATURE_UNAVAILABLE` |
+| Queries | Evaluation pages require READ; live rule inspection requires POLICY; each uses its own shared route quota |
 
 Errors use `application/problem+json`, a server-generated correlation ID and `Cache-Control: no-store`. Admission and confirmed processing rollback report `NOT_ACCEPTED`; commit/completion uncertainty reports `UNKNOWN`. They omit request/credential values and dependency diagnostics. An uncertain outcome requires scoped GET or replay of the identical ID/payload; a temporary 404 does not prove that another in-flight attempt cannot commit.
 
 Quota settings remain startup infrastructure configuration. Redis uses its own clock, clamps backward movement and caps refill at capacity. Idle state has a bounded expiry. Redis restart, lost state/expiry or a forward clock jump can restore allowance; this is an abuse quota, not a durable financial limit. Redis noeviction/script/ACL/timeout errors reject protected traffic. Readiness PING checks dependency connectivity; protected smoke checks additionally prove the script permissions work.
 
-Tomcat worker/connection/backlog/header bounds and idle timeouts, bounded JSON reads and a nonwaiting admission permit bound resource use. Deadline checks surround admission and follow decoding. Absolute slow-upload deadlines, pre-authentication edge quotas and complete transactional cancellation under network faults remain deployment/later acceptance work. Query filter/pagination semantics arrive with the query milestone.
+Tomcat worker/connection/backlog/header bounds and idle timeouts, bounded JSON reads and a nonwaiting admission permit bound resource use. Deadline checks surround admission and follow decoding. Absolute slow-upload deadlines, pre-authentication edge quotas and complete transactional cancellation under network faults remain deployment/later acceptance work. Evaluation queries enforce configured page/date bounds and strict filter validation.
 
 ## Transactional storage and compatible upgrades
 
@@ -92,17 +92,18 @@ Runtime has SELECT/INSERT on immutable transactions, evaluations, rule results a
 
 All five rules have execution implementations in this build and are enabled in the sample. Activation rejects enabling an unavailable rule; bypassing the validator through raw SQL closes readiness and new-event selection until a compatible policy is restored. Existing results remain immutable.
 
-Existing installations retain their active policy while upgrading. Prepare a compatible [startup configuration](../config/service.example.yaml), including the travel candidate safety ceiling and documentation toggle. Drain ingestion before applying migrations; this build requires schema marker 7, so older images need a coordinated release. For local Compose:
+Existing installations retain their active policy while upgrading. Prepare a compatible [startup configuration](../config/service.example.yaml), including the travel candidate safety ceiling and documentation toggle. Drain ingestion before applying migrations; this build requires schema marker 8, so older images need a coordinated release. For local Compose:
 
 ```sh
+./scripts/init-secrets.sh
 docker compose build app
 docker compose stop app
 docker compose up -d --no-build --wait --wait-timeout 120
 ```
 
-Flyway applies only pending migrations and preserves evaluations, identities and policy history. V7 adds the customer/currency/event-time covering index using normal PostgreSQL locking; schedule index creation for a large existing dataset. Keep the data volume and applied migration history. Fresh startup seeds the compatible sample only when no active policy exists.
+Flyway applies only pending migrations and preserves evaluations, identities and policy history. V8 backfills evaluation navigation fields and builds scoped acceptance-time/customer/decision indexes. Backfill and index creation use normal PostgreSQL locking; drain ingestion and schedule the migration for a large existing dataset. Keep the data volume and applied migration history. Fresh startup seeds the compatible sample only when no active policy exists.
 
-After upgrading, explicitly activate a validated working copy of the active policy to enable additional rules. Preserve its business values and change only the intended enabled states; for the new sequence rule, set `smallPaymentBurstThenLarge.enabled: true`. Recreating the app or editing the seed file does not activate business changes. The activation procedure is in the business-policy section above.
+This upgrade requires no business-policy activation. Existing rule settings and enabled states remain authoritative. To change them, activate a validated working copy using the business-policy procedure above; recreating the app or editing the seed file does not activate business changes.
 
 The live travel candidate cap must not exceed the startup infrastructure ceiling. Activation and runtime loading reject incompatible policies; increasing business limits above that ceiling first requires a deliberate infrastructure release. Speed, distance, allowance, comparison age, accuracy, source/channel filters and enabled state otherwise take effect without app restart. Every new evaluation uses one captured policy; old results remain immutable.
 
@@ -114,14 +115,22 @@ A POST success contains the original policy hash, evaluator artifact identity, a
 
 Rule failures and work-budget expiry before commit roll back all records. Completion failures can be ambiguous even when the server later proves rollback, so the API conservatively returns `UNKNOWN` where commit/cleanup cannot be confirmed. Transport loss after commit can hide a successful response. Retry the identical event, never a replacement ID. Original decisions and provenance remain retrievable after restart or subsequent policy changes. Full process-kill/network/backup recovery drills remain release acceptance work.
 
+## Query access and cursor keys
+
+`GET /api/v1/evaluations` requires READ and uses its shared quota. It returns stored evaluation objects in ascending `(acceptedAt,id)` order; no new fraud decisions are made. Dates apply to acceptance time with `[acceptedFrom,acceptedTo)` bounds. Unknown, duplicate, empty and malformed parameters return 400; out-of-range page/date limits return 422. A cursor binds scope, explicit filters and page size, so repeat those unchanged. Omitted date defaults stay pinned to the first request. Late commits can fall behind a cursor; this is not an export or reconciliation snapshot.
+
+`GET /api/v1/rules` requires POLICY and has a separate quota. It returns one active policy hash with all rule settings and enabled states. Live activation changes the next inspection without an app restart; an already captured response may complete under the previous version. Infrastructure settings, credentials and source YAML are excluded. The HTTP endpoint cannot activate a policy.
+
+`init-secrets.sh` creates and preserves the ignored `secrets/fraud.cursor-signing-key`: 32 random bytes encoded as hexadecimal. Compose mounts it into the runtime configuration tree; local JVM runs must supply `fraud.cursor-signing-key` securely. There is no fallback signing key. All replicas need the same key. Key changes require coordinated restarts and invalidate existing cursors with 400; restart traversal from the first page. Business policy activation neither changes this key nor restarts the application. Keep cursors out of public diagnostic material even though they are not authentication credentials.
+
 ## Probes and diagnosis
 
 | Probe | Success | Failure | Meaning |
 | --- | --- | --- | --- |
 | `GET /health/live` | 200 `{"status":"UP"}` | Unreachable during termination | Process can serve HTTP; no shared dependency checks |
-| `GET /health/ready` | 200 `{"status":"UP"}` | 503 `{"status":"DOWN"}` | Schema marker v7, a valid compatible active database policy and authenticated Redis ping succeed |
+| `GET /health/ready` | 200 `{"status":"UP"}` | 503 `{"status":"DOWN"}` | Schema marker v8, a valid compatible active database policy and authenticated Redis ping succeed |
 
-Probes expose no dependency names or diagnostics. Readiness verifies policy compatibility but does not authorize business traffic. Transaction POST and event GET enforce admission and execute the implemented flow. List/policy-inspection handlers remain `503 FEATURE_UNAVAILABLE`. Default login, diagnostic and unknown routes remain denied. Health routes belong on a restricted operational network when deployed externally.
+Probes expose no dependency names or diagnostics. Readiness verifies policy compatibility but does not authorize business traffic. Transaction POST and event GET enforce admission and execute the implemented flow. Evaluation pages and live policy inspection enforce their scoped READ/POLICY permissions, shared quotas and configured query bounds. Default login, diagnostic and unknown routes remain denied. Health routes belong on a restricted operational network when deployed externally.
 
 If readiness fails, inspect `docker compose ps -a`, database/Redis health and application logs. PostgreSQL acquisition is bounded to 500 ms, statements to 1.5 seconds, and Redis connections/commands to 250 ms. These are individual dependency limits, not an overall fraud-request deadline. JDBC network reads are bounded to two seconds. Migration statements have a separate 30-second limit and a 35-second network-read budget. Public readiness recovers after dependencies return; liveness stays independent.
 

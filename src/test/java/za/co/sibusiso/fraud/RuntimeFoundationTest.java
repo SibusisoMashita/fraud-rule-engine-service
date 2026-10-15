@@ -38,6 +38,7 @@ class RuntimeFoundationTest {
     @DynamicPropertySource
     static void dependencies(DynamicPropertyRegistry properties) throws SQLException {
         TestDatabase.initialize(DATABASE);
+        properties.add("fraud.cursor-signing-key",()->"a".repeat(64));
         properties.add("spring.datasource.url", () -> DATABASE.getJdbcUrl() + "&connectTimeout=1&socketTimeout=2");
         properties.add("spring.datasource.password", () -> PASSWORD);
         properties.add("spring.data.redis.host", REDIS::getHost);
@@ -93,12 +94,12 @@ class RuntimeFoundationTest {
 
     @Test
     void schemaMismatchPreventsReadiness() throws Exception {
-        changeSchemaVersion(99, 7);
+        changeSchemaVersion(99, 8);
         try {
             assertResponse("/health/ready", 503, "{\"status\":\"DOWN\"}");
             assertResponse("/health/live", 200, "{\"status\":\"UP\"}");
         } finally {
-            changeSchemaVersion(7, 99);
+            changeSchemaVersion(8, 99);
         }
     }
 
