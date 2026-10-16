@@ -27,7 +27,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import za.co.sibusiso.fraud.configuration.*;
 import za.co.sibusiso.fraud.evaluation.*;
-import za.co.sibusiso.fraud.ingress.CredentialAuthenticator;
+import za.co.sibusiso.fraud.ingress.security.CredentialAuthenticator;
+
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 

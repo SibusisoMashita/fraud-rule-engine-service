@@ -15,6 +15,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import za.co.sibusiso.fraud.TestDatabase;
 import za.co.sibusiso.fraud.TestImages;
+import za.co.sibusiso.fraud.ingress.security.Caller;
+
 import static org.assertj.core.api.Assertions.*;
 
 /** Real database fixtures isolate receipt-window, watermark and index behaviour from HTTP. */
@@ -181,7 +183,7 @@ class HistoryStoreTest {
             var writer=new JdbcTransactionStore(jdbc);
             writer.createCustomer(scope,"customer");writer.lockCustomer(scope,"customer");writer.bindInstrument(scope,instrument,"customer");
             var source=atm?za.co.sibusiso.fraud.domain.TransactionEvent.LocationSource.VERIFIED_ATM_TERMINAL:za.co.sibusiso.fraud.domain.TransactionEvent.LocationSource.VERIFIED_CARD_PRESENT_TERMINAL;
-            var caller=new za.co.sibusiso.fraud.ingress.Caller(scope,scope,java.util.Set.of(za.co.sibusiso.fraud.ingress.Caller.Role.INGEST),java.util.Set.of(source),1);
+            var caller=new za.co.sibusiso.fraud.ingress.security.Caller(scope,scope,java.util.Set.of(za.co.sibusiso.fraud.ingress.security.Caller.Role.INGEST),java.util.Set.of(source),1);
             var input=new za.co.sibusiso.fraud.domain.TransactionEvent(id,"customer",instrument,
                     atm?za.co.sibusiso.fraud.domain.TransactionEvent.Type.ATM_WITHDRAWAL:za.co.sibusiso.fraud.domain.TransactionEvent.Type.CARD_PURCHASE,
                     za.co.sibusiso.fraud.domain.TransactionEvent.Status.BOOKED,

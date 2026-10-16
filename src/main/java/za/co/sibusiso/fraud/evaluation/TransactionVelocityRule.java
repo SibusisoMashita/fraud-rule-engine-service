@@ -21,7 +21,7 @@ public final class TransactionVelocityRule implements FraudRule<Velocity> {
         return new RuleResult(definition().id(), definition().algorithmVersion(),
                 match ? RuleResult.Status.MATCH : RuleResult.Status.NO_MATCH,
                 match ? "TRANSACTION_COUNT_EXCEEDS_LIMIT" : "TRANSACTION_COUNT_WITHIN_LIMIT", Map.of(
-                        "evidenceSchemaVersion", new RuleResult.Number(BigDecimal.ONE),
+                        RuleResult.EVIDENCE_SCHEMA_VERSION_KEY, new RuleResult.Number(BigDecimal.ONE),
                         "count", new RuleResult.Number(BigDecimal.valueOf(count)),
                         "maxTransactions", new RuleResult.Number(BigDecimal.valueOf(settings.maxTransactions())),
                         "windowSeconds", new RuleResult.Number(BigDecimal.valueOf(settings.windowSeconds())),

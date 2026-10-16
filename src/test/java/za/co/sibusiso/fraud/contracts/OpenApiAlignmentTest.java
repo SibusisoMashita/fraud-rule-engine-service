@@ -8,6 +8,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import za.co.sibusiso.fraud.configuration.StrictYaml;
 import za.co.sibusiso.fraud.domain.*;
+import za.co.sibusiso.fraud.ingress.error.ApiFailure;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -23,6 +24,7 @@ class OpenApiAlignmentTest {
         assertEnum(object(schemas, "RuleResult"), "status", RuleResult.Status.values());
         assertEnum(object(schemas, "Evaluation"), "decision", EvaluationOutcome.Decision.values());
         assertEnum(object(schemas, "Evaluation"), "coverage", EvaluationOutcome.Coverage.values());
+        assertEnum(object(schemas, "Problem"), "outcome", ApiFailure.Outcome.values());
         assertThat(object(object(object(schemas, "RuleResult"), "properties"), "ruleId").containsKey("enum")).isFalse();
         assertThat(object(schemas, "Identifier").get("maxLength")).isEqualTo(128);
         assertThat(object(object(object(schemas, "RuleResult"), "properties"), "evidence").get("maxProperties")).isEqualTo(16);

@@ -2,8 +2,8 @@ package za.co.sibusiso.fraud.evaluation;
 
 import java.math.BigDecimal;
 import java.util.Map;
-import za.co.sibusiso.fraud.configuration.BuiltInRules;
 import za.co.sibusiso.fraud.configuration.BuiltInRuleSettings.HighAmount;
+import za.co.sibusiso.fraud.configuration.BuiltInRules;
 import za.co.sibusiso.fraud.configuration.RuleDefinition;
 import za.co.sibusiso.fraud.domain.RuleResult;
 import za.co.sibusiso.fraud.domain.TransactionEvent;
@@ -19,7 +19,7 @@ public final class HighAmountRule implements FraudRule<HighAmount> {
         return new RuleResult(definition.id(), definition.algorithmVersion(),
                 match ? RuleResult.Status.MATCH : RuleResult.Status.NO_MATCH,
                 match ? "AMOUNT_EXCEEDS_THRESHOLD" : "AMOUNT_WITHIN_THRESHOLD", Map.of(
-                        "evidenceSchemaVersion", new RuleResult.Number(BigDecimal.ONE),
+                        RuleResult.EVIDENCE_SCHEMA_VERSION_KEY, new RuleResult.Number(BigDecimal.ONE),
                         "amount", new RuleResult.Number(event.money().amount()),
                         "threshold", new RuleResult.Number(threshold),
                         "currency", new RuleResult.Text(event.money().currency())));

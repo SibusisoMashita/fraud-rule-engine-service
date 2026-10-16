@@ -20,7 +20,8 @@ import za.co.sibusiso.fraud.TestDatabase;
 import za.co.sibusiso.fraud.TestImages;
 import za.co.sibusiso.fraud.configuration.*;
 import za.co.sibusiso.fraud.domain.*;
-import za.co.sibusiso.fraud.ingress.Caller;
+import za.co.sibusiso.fraud.ingress.security.Caller;
+
 import static org.assertj.core.api.Assertions.*;
 
 @Testcontainers

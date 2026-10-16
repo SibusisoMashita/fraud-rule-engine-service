@@ -1,4 +1,4 @@
-package za.co.sibusiso.fraud.ingress;
+package za.co.sibusiso.fraud.ingress.security;
 
 import java.util.Optional;
 

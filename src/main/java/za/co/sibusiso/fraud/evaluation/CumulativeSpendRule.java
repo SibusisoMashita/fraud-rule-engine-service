@@ -23,7 +23,7 @@ public final class CumulativeSpendRule implements FraudRule<CumulativeSpend> {
         return new RuleResult(definition().id(), definition().algorithmVersion(),
                 match ? RuleResult.Status.MATCH : RuleResult.Status.NO_MATCH,
                 match ? "CUMULATIVE_SPEND_EXCEEDS_THRESHOLD" : "CUMULATIVE_SPEND_WITHIN_THRESHOLD", Map.of(
-                        "evidenceSchemaVersion", new RuleResult.Number(BigDecimal.ONE),
+                        RuleResult.EVIDENCE_SCHEMA_VERSION_KEY, new RuleResult.Number(BigDecimal.ONE),
                         "total", new RuleResult.Number(total),
                         "threshold", new RuleResult.Number(threshold),
                         "currency", new RuleResult.Text(event.money().currency()),

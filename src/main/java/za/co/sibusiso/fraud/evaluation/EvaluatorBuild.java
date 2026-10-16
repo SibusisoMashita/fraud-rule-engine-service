@@ -7,8 +7,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import org.springframework.boot.system.ApplicationHome;
-import org.springframework.stereotype.Component;
 import org.springframework.context.annotation.Profile;
+import org.springframework.stereotype.Component;
+import org.springframework.util.ResourceUtils;
 import za.co.sibusiso.fraud.FraudApplication;
 
 @Component
@@ -19,7 +20,7 @@ public final class EvaluatorBuild {
         var source = new ApplicationHome(FraudApplication.class).getSource();
         if (source == null) {
             var location = FraudApplication.class.getProtectionDomain().getCodeSource().getLocation();
-            if (!location.getProtocol().equals("file")) throw new IllegalStateException("Cannot identify evaluator artifact");
+            if (!location.getProtocol().equals(ResourceUtils.URL_PROTOCOL_FILE)) throw new IllegalStateException("Cannot identify evaluator artifact");
             source = java.nio.file.Path.of(java.net.URI.create(location.toExternalForm())).toFile();
         }
         var root = source.toPath(); var digest = MessageDigest.getInstance("SHA-256");

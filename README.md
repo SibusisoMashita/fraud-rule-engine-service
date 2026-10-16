@@ -79,6 +79,7 @@ For Java tests, install JDK 21, set `JAVA_HOME` and keep Docker running. Maven i
 
 ```sh
 ./mvnw -B -ntp verify
+docker compose build app
 ./scripts/smoke.sh
 ```
 

@@ -26,16 +26,18 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import za.co.sibusiso.fraud.configuration.*;
 import za.co.sibusiso.fraud.domain.TransactionEvent;
 import za.co.sibusiso.fraud.evaluation.*;
-import za.co.sibusiso.fraud.ingress.*;
+import za.co.sibusiso.fraud.ingress.request.TransactionDecoder;
+import za.co.sibusiso.fraud.ingress.security.CredentialAuthenticator;
+
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 

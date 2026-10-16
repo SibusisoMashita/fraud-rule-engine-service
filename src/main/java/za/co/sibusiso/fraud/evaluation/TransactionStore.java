@@ -1,12 +1,12 @@
 package za.co.sibusiso.fraud.evaluation;
 
-import java.time.Instant;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import za.co.sibusiso.fraud.domain.EvaluationOutcome;
 import za.co.sibusiso.fraud.domain.TransactionEvent;
-import za.co.sibusiso.fraud.ingress.Caller;
+import za.co.sibusiso.fraud.ingress.security.Caller;
 
 public interface TransactionStore {
     record Stored(String requestHash, String json) { }

@@ -250,7 +250,7 @@ The test-only commit-fault image derives from a pinned [official Python image](h
 
 Official PostgreSQL 17.11 Alpine 3.24 and Redis 8.2.10 Alpine 3.22 replace the Debian variants, retaining the database/server versions while removing the previously reported OS-package findings and bundled test key.
 
-The exact candidate scans on 2026-10-16 returned zero HIGH/CRITICAL vulnerabilities and zero secret findings. No vulnerability suppressions or severity overrides are used. See the official [PostgreSQL image definitions](https://github.com/docker-library/official-images/blob/master/library/postgres) and [Redis image definitions](https://github.com/docker-library/official-images/blob/master/library/redis). Scanner/database identity and separate `db.json`/`redis.json` reports remain in ignored `target/security/`; scan results are time-specific, not a permanent security guarantee.
+The scans on 2026-10-16 returned zero HIGH/CRITICAL vulnerabilities and zero secret findings. No vulnerability suppressions or severity overrides are used. See the official [PostgreSQL image definitions](https://github.com/docker-library/official-images/blob/master/library/postgres) and [Redis image definitions](https://github.com/docker-library/official-images/blob/master/library/redis). Scanner/database identity and separate `db.json`/`redis.json` reports remain in ignored `target/security/`; scan results are time-specific, not a permanent security guarantee.
 
 ## Database image migration
 

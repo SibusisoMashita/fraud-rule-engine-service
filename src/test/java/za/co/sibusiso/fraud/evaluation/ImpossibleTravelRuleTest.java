@@ -12,6 +12,7 @@ import za.co.sibusiso.fraud.configuration.*;
 import za.co.sibusiso.fraud.configuration.BuiltInRuleSettings.ImpossibleTravel;
 import za.co.sibusiso.fraud.domain.*;
 import za.co.sibusiso.fraud.domain.TransactionEvent.*;
+
 import static org.assertj.core.api.Assertions.*;
 
 class ImpossibleTravelRuleTest {
@@ -63,6 +64,17 @@ class ImpossibleTravelRuleTest {
         assertThat(((RuleResult.Text)result.evidence().get("referenceEventId")).value()).isEqualTo("a");
         var strongest=evaluate(input,settings,false,a,reference("durban",now,durban()));
         assertThat(((RuleResult.Text)strongest.evidence().get("referenceEventId")).value()).isEqualTo("durban");
+    }
+    @Test void aNearbyNonmatchWithGreaterExcessCannotHideAMatchingPair() {
+        var input=event(now,point("0","0","0","Current"));
+        var policy=policy(1000,50,25,5,500);
+        // About 44 km at the same time has greater excess, but falls below the 50 km minimum.
+        var nearby=reference("nearby",now,point("0","0.4","0","Nearby"));
+        // About 111 km in five minutes exceeds both configured travel bounds.
+        var matching=reference("matching",now.minusSeconds(300),point("0","1","0","Distant"));
+        var result=evaluate(input,policy,false,nearby,matching);
+        assertThat(result.status()).isEqualTo(RuleResult.Status.MATCH);
+        assertThat(((RuleResult.Text)result.evidence().get("referenceEventId")).value()).isEqualTo("matching");
     }
     @Test void cityLabelsCannotCreateAnAnomalyAndAccuracyCirclesCanOverlap() {
         var input=event(now,capeTown());var samePlace=point("-33.9249","18.4241","0.1","Johannesburg");

@@ -25,7 +25,7 @@ public final class SmallPaymentBurstRule implements FraudRule<SmallPaymentBurst>
     @Override public RuleResult evaluate(TransactionEvent event, SmallPaymentBurst settings, Context context) {
         var facts = new LinkedHashMap<String, RuleResult.Fact>();
         String currency = event.money().currency();
-        facts.put("evidenceSchemaVersion", new RuleResult.Number(BigDecimal.ONE));
+        facts.put(RuleResult.EVIDENCE_SCHEMA_VERSION_KEY, new RuleResult.Number(BigDecimal.ONE));
         facts.put("amount", new RuleResult.Number(event.money().amount()));
         facts.put("currency", new RuleResult.Text(currency));
         facts.put("smallPaymentMaximum", new RuleResult.Number(settings.smallPaymentMaximum().get(currency).value()));

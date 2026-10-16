@@ -60,7 +60,7 @@ MATCH when both are true:
 
 The same inequality works at zero elapsed time without dividing by zero. Any violating pair yields `MATCH`. Otherwise, at least one eligible candidate yields `NO_MATCH`; no candidate yields `INSUFFICIENT_DATA / NO_REFERENCE`.
 
-Evidence identifies the pair with the greatest excess over the travel bound, breaking ties by ID, whether or not it matches. It records candidate count, distance, effective distance, elapsed seconds, configured limits, both accuracy radii, watermark and evidence schema version. Measurements round to six decimal places for display; decisions use unrounded values. Historical coordinates and city labels stay out of rule evidence. The returned current transaction retains its admitted location.
+When any pair matches, evidence identifies the matching pair with the greatest excess over the travel bound. Otherwise it identifies the nonmatching pair with the greatest excess. Ties are broken by event ID. It records candidate count, distance, effective distance, elapsed seconds, configured limits, both accuracy radii, watermark and evidence schema version. Measurements round to six decimal places for display; decisions use unrounded values. Historical coordinates and city labels stay out of rule evidence. The returned current transaction retains its admitted location.
 
 This is a fraud signal, not proof of travel. Lower limits can flag legitimate flights; shared/cloned cards, multiple devices and bad terminal metadata remain risks. Producers must supply reliable event times—ingestion age/skew checks cannot establish terminal-clock accuracy. Delayed evidence does not recompute past evaluations. Cape Town/Johannesburg/Durban fixtures test the algorithm, not bank-grade detection accuracy.
 

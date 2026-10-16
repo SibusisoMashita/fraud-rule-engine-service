@@ -145,11 +145,7 @@ def verify(stack, record):
     details = json.loads(command(['docker', 'inspect', *stack.replicas()]))
     details.sort(key=lambda item: int(item['Config']['Labels']['com.docker.compose.container-number']), reverse=True)
     victim = details[0]
-    addresses = {network['IPAddress'] for network in victim['NetworkSettings']['Networks'].values()}
-    lines = stack.runtime('show servers state fraud').splitlines()
-    header = next(line for line in lines if line.startswith('#')).lstrip('# ').split()
-    states = [dict(zip(header, line.split())) for line in lines if line and not line.startswith('#') and len(line.split()) > 1]
-    targets = {row['srv_name'] for row in states if row['srv_addr'] in addresses}
+    targets = set(stack.backend_names(victim))
     check(targets, 'Cannot identify the in-flight drain target')
     payments = [event(stack.settings, 'drain-' + str(i)) for i in range(len(details))]
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(payments) + 1) as pool:

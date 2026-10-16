@@ -16,13 +16,18 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.json.JsonMapper;
 import za.co.sibusiso.fraud.configuration.*;
-import za.co.sibusiso.fraud.ingress.*;
+import za.co.sibusiso.fraud.ingress.error.ApiFailure;
+import za.co.sibusiso.fraud.ingress.security.Caller;
+import za.co.sibusiso.fraud.ingress.security.CredentialAuthenticator;
+import za.co.sibusiso.fraud.ingress.security.IngressRoute;
+import za.co.sibusiso.fraud.ingress.security.SharedRateLimiter;
+
 import static org.assertj.core.api.Assertions.*;
 
 @Testcontainers
@@ -196,7 +201,7 @@ class ProtectedIngressTest {
             var futures = new ArrayList<Future<?>>();
             for (int i=0;i<20;i++) { final int index=i; futures.add(executor.submit(() -> {
                 try { start.await(); (index%2==0?first:second).acquire(index%2==0?caller:rotatedCaller,IngressRoute.INGEST); allowed.incrementAndGet(); }
-                catch (ApiFailure failure) { assertThat(failure.status()).isEqualTo(429); assertThat(failure.retryAfterSeconds()).isPositive(); denied.incrementAndGet(); }
+                catch (ApiFailure failure) { assertThat(failure.status().value()).isEqualTo(429); assertThat(failure.retryAfterSeconds()).isPositive(); denied.incrementAndGet(); }
                 catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new AssertionError(interrupted); }
             })); }
             start.countDown(); for (var future:futures) future.get(5,TimeUnit.SECONDS);

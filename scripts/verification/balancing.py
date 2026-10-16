@@ -65,6 +65,13 @@ class BalancedStack(Stack):
     def servers(self):
         return [row for row in self.rows() if row['pxname'] == 'fraud' and row['svname'].startswith('app')]
 
+    def backend_names(self, container):
+        addresses = {network['IPAddress'] for network in container['NetworkSettings']['Networks'].values()}
+        lines = self.runtime('show servers state fraud').splitlines()
+        header = next(line for line in lines if line.startswith('#')).lstrip('# ').split()
+        states = [dict(zip(header, line.split())) for line in lines if line and not line.startswith('#') and len(line.split()) > 1]
+        return [row['srv_name'] for row in states if row['srv_addr'] in addresses]
+
     def wait_ready(self, count):
         wait_for(lambda: sum(row['status'] == 'UP' for row in self.servers()) == count,
                  self.settings['startupTimeoutSeconds'], 'Proxy did not discover ready replicas')
@@ -80,11 +87,7 @@ class BalancedStack(Stack):
             details = json.loads(command(['docker', 'inspect', *current]))
             details.sort(key=lambda x: int(x['Config']['Labels']['com.docker.compose.container-number']), reverse=True)
             for container in details[:len(current) - count]:
-                addresses = {v['IPAddress'] for v in container['NetworkSettings']['Networks'].values()}
-                lines = self.runtime('show servers state fraud').splitlines()
-                header = next(line for line in lines if line.startswith('#')).lstrip('# ').split()
-                state = [dict(zip(header, line.split())) for line in lines if line and not line.startswith('#') and len(line.split()) > 1]
-                names = [row['srv_name'] for row in state if row['srv_addr'] in addresses]
+                names = self.backend_names(container)
                 check(names, 'Cannot identify drain target')
                 for name in names:
                     self.set_state(name, 'drain')

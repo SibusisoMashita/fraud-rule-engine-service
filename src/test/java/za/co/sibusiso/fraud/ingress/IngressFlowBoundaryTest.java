@@ -8,6 +8,9 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.configuration.StrictYaml;
 import za.co.sibusiso.fraud.evaluation.TransactionService;
+import za.co.sibusiso.fraud.ingress.error.ApiFailure;
+import za.co.sibusiso.fraud.ingress.security.Caller;
+
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 

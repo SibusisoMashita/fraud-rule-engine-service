@@ -10,6 +10,14 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
 import za.co.sibusiso.fraud.configuration.*;
+import za.co.sibusiso.fraud.ingress.error.ApiFailure;
+import za.co.sibusiso.fraud.ingress.request.RequestDeadline;
+import za.co.sibusiso.fraud.ingress.security.Caller;
+import za.co.sibusiso.fraud.ingress.security.CredentialAuthenticator;
+import za.co.sibusiso.fraud.ingress.security.CredentialStore;
+import za.co.sibusiso.fraud.ingress.security.IngressFilter;
+import za.co.sibusiso.fraud.ingress.security.SharedRateLimiter;
+
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 

@@ -1,4 +1,4 @@
-package za.co.sibusiso.fraud.ingress;
+package za.co.sibusiso.fraud.ingress.request;
 
 import java.util.Map;
 import java.util.stream.Stream;
@@ -7,6 +7,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.core.io.ClassPathResource;
 import za.co.sibusiso.fraud.configuration.*;
+import za.co.sibusiso.fraud.ingress.error.ApiFailure;
+
 import static org.assertj.core.api.Assertions.*;
 
 class EvaluationQueryDecoderTest {
@@ -27,11 +29,11 @@ class EvaluationQueryDecoderTest {
             Map.of("acceptedFrom",new String[]{"2026-10-16T00:00:00"}),Map.of("acceptedTo",new String[]{"2026-02-30T00:00:00Z"}),
             Map.of("acceptedTo",new String[]{"2026-10-16T00:00:00.0000001Z"}),Map.of("acceptedTo",new String[]{"0000-01-01T00:00:00Z"}));}
     @ParameterizedTest @MethodSource("malformed") void rejectsMalformedUnknownDuplicateOrOversizedParameters(Map<String,String[]> parameters){
-        assertThatThrownBy(()->decoder.decode(parameters)).isInstanceOf(ApiFailure.class).extracting(f->((ApiFailure)f).status()).isEqualTo(400);
+        assertThatThrownBy(()->decoder.decode(parameters)).isInstanceOf(ApiFailure.class).extracting(f->((ApiFailure)f).status().value()).isEqualTo(400);
     }
     @Test void operationalPageMaximumIsAppliedWithoutChangingTheBusinessPolicy(){
         for(String size:new String[]{"0","-1","101","2147483648","9".repeat(20)})
             assertThatThrownBy(()->decoder.decode(Map.of("pageSize",new String[]{size}))).isInstanceOf(ApiFailure.class)
-                    .extracting(f->((ApiFailure)f).status()).isEqualTo(422);
+                    .extracting(f->((ApiFailure)f).status().value()).isEqualTo(422);
     }
 }

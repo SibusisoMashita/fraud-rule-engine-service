@@ -2,7 +2,7 @@ package za.co.sibusiso.fraud.evaluation;
 
 import java.util.function.LongSupplier;
 import za.co.sibusiso.fraud.domain.TransactionEvent;
-import za.co.sibusiso.fraud.ingress.Caller;
+import za.co.sibusiso.fraud.ingress.security.Caller;
 
 public interface EvaluationWriter {
     final class Attempt {

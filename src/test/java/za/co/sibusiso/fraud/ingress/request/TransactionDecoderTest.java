@@ -1,4 +1,4 @@
-package za.co.sibusiso.fraud.ingress;
+package za.co.sibusiso.fraud.ingress.request;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -10,6 +10,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.core.io.ClassPathResource;
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.configuration.StrictYaml;
+import za.co.sibusiso.fraud.ingress.error.ApiFailure;
+
 import static org.assertj.core.api.Assertions.*;
 
 class TransactionDecoderTest {
@@ -29,7 +31,7 @@ class TransactionDecoderTest {
     }
     @ParameterizedTest @MethodSource("invalid")
     void rejectsMalformedOrUnsafeInput(String input, int status) {
-        assertThatThrownBy(() -> decode(input)).isInstanceOfSatisfying(ApiFailure.class, failure -> assertThat(failure.status()).isEqualTo(status));
+        assertThatThrownBy(() -> decode(input)).isInstanceOfSatisfying(ApiFailure.class, failure -> assertThat(failure.status().value()).isEqualTo(status));
     }
     static Stream<Arguments> invalid() {
         return Stream.of(
@@ -52,15 +54,15 @@ class TransactionDecoderTest {
     }
     @Test void boundsUnknownLengthBodiesAndRejectsEncodingConfusion() {
         assertThatThrownBy(() -> decoder.decode(new ByteArrayInputStream(new byte[]{(byte)0xff}),-1,"application/json",null))
-                .isInstanceOfSatisfying(ApiFailure.class, e -> assertThat(e.status()).isEqualTo(400));
+                .isInstanceOfSatisfying(ApiFailure.class, e -> assertThat(e.status().value()).isEqualTo(400));
         for (String type : new String[]{"text/plain","application/json;charset=UTF-16",""}) {
             assertThatThrownBy(() -> decoder.decode(new ByteArrayInputStream(VALID.getBytes(StandardCharsets.UTF_8)),-1,type,null))
-                    .isInstanceOfSatisfying(ApiFailure.class, e -> assertThat(e.status()).isEqualTo(415));
+                    .isInstanceOfSatisfying(ApiFailure.class, e -> assertThat(e.status().value()).isEqualTo(415));
         }
         assertThatThrownBy(() -> decoder.decode(new ByteArrayInputStream(new byte[0]),16385,"application/json",null))
-                .isInstanceOfSatisfying(ApiFailure.class, e -> assertThat(e.status()).isEqualTo(413));
+                .isInstanceOfSatisfying(ApiFailure.class, e -> assertThat(e.status().value()).isEqualTo(413));
         assertThatThrownBy(() -> decoder.decode(new ByteArrayInputStream(new byte[0]),0,"application/json","gzip"))
-                .isInstanceOfSatisfying(ApiFailure.class, e -> assertThat(e.status()).isEqualTo(415));
+                .isInstanceOfSatisfying(ApiFailure.class, e -> assertThat(e.status().value()).isEqualTo(415));
     }
     private za.co.sibusiso.fraud.domain.TransactionEvent decode(String input) throws Exception {
         return decoder.decode(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)),-1,"application/json",null);

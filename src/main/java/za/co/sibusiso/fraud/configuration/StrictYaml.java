@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.regex.Pattern;
 import org.springframework.core.io.Resource;
+import org.springframework.util.ResourceUtils;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -46,7 +47,7 @@ public final class StrictYaml {
             }).build();
 
     public static Resource localResource(org.springframework.core.io.ResourceLoader loader, String location) {
-        ContractChecks.require(location.startsWith("classpath:") || location.startsWith("file:"),
+        ContractChecks.require(location.startsWith(ResourceUtils.CLASSPATH_URL_PREFIX) || location.startsWith(ResourceUtils.FILE_URL_PREFIX),
                 "Configuration locations must use classpath: or file:");
         return loader.getResource(location);
     }

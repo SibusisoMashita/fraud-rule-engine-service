@@ -1,6 +1,7 @@
 package za.co.sibusiso.fraud;
 
 import java.io.IOException;
+import java.util.Objects;
 import java.util.Properties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -17,27 +18,37 @@ import za.co.sibusiso.fraud.configuration.ServiceLimits;
 class DocumentationConfiguration implements WebMvcConfigurer {
     private final boolean enabled;
     private final String version;
+
     DocumentationConfiguration(ServiceLimits limits) throws IOException {
         enabled = limits.api().documentationEnabled();
         var properties = new Properties();
-        try (var input = new ClassPathResource("META-INF/maven/org.webjars/swagger-ui/pom.properties").getInputStream()) {
+        try (var input =
+                new ClassPathResource("META-INF/maven/org.webjars/swagger-ui/pom.properties")
+                        .getInputStream()) {
             properties.load(input);
         }
-        version = java.util.Objects.requireNonNull(properties.getProperty("version"));
+        version = Objects.requireNonNull(properties.getProperty("version"));
     }
-    @Override public void addResourceHandlers(ResourceHandlerRegistry registry) {
+
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
         if (!enabled) return;
         registry.addResourceHandler("/swagger-ui/assets/**")
-                .addResourceLocations("classpath:/META-INF/resources/webjars/swagger-ui/" + version + "/")
+                .addResourceLocations(
+                        "classpath:/META-INF/resources/webjars/swagger-ui/" + version + "/")
                 .setCacheControl(CacheControl.noStore());
-        registry.addResourceHandler("/swagger-ui/**").addResourceLocations("classpath:/documentation/")
+        registry.addResourceHandler("/swagger-ui/**")
+                .addResourceLocations("classpath:/documentation/")
                 .setCacheControl(CacheControl.noStore());
-        registry.addResourceHandler("/openapi.yaml").addResourceLocations("classpath:/api/")
+        registry.addResourceHandler("/openapi.yaml")
+                .addResourceLocations("classpath:/api/")
                 .setCacheControl(CacheControl.noStore());
     }
-    @Override public void addViewControllers(ViewControllerRegistry registry) {
+
+    @Override
+    public void addViewControllers(ViewControllerRegistry registry) {
         if (!enabled) return;
-        for (String path : new String[]{"/swagger-ui", "/swagger-ui/", "/swagger-ui.html"})
+        for (String path : new String[] {"/swagger-ui", "/swagger-ui/", "/swagger-ui.html"})
             registry.addRedirectViewController(path, "/swagger-ui/index.html");
     }
 }

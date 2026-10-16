@@ -91,7 +91,7 @@ The IDs below group the acceptance risks. Passing tests apply to the documented 
 | SC-19 | Missing or inapplicable evidence must not silently become no-match. | Complete decision/status truth table; physical missing evidence, first reference and online cases. |
 | SC-20 | Candidate limits and delayed locations must not hide travel evidence. | Cap/cap+1, inclusive horizon, late earlier/later/equal-time candidates; immutable as-observed results. |
 | SC-21 | Small-payment bursts follow event time, not arrival order. | Threshold equalities, same-time exclusion, reversed arrival order, delayed small/large and currency/scope cases. |
-| SC-22 | Backwards wall-clock movement must not exclude accepted history. | Inject clock regression; same-time ordering, acceptance clamp and drift signal assertions. |
+| SC-22 | Backwards wall-clock movement must not exclude accepted history. | Inject clock regression; same-time ordering, acceptance clamping within tolerance and rejection beyond tolerance. |
 | SC-23 | Capacity claims must match a measured workload without invariant loss. | Reproducible resource/workload manifest; one/two-instance and hot-customer results; latency, denials, query plans and recovery. |
 | SC-24 | Pagination remains authorized and bounded without claiming a snapshot. | Cursor/filter tampering and late commit behind cursor; reconciliation uses point lookups. |
 | SC-25 | A reviewer can run the submitted repository without hidden setup. | Fresh-clone build/start/test/stop log; actual repository URL, five-rule samples and persistence after restart. |
@@ -112,17 +112,16 @@ Reports record the hardware, versions, resource limits, policy, quotas, connecti
 
 ### Measured local results
 
-On 2026-10-16, the release candidate ran on Docker Desktop 29.8.2/aarch64 with ten Docker CPUs and an approximately 8 GiB VM. Each app had one CPU/512 MiB, PostgreSQL one CPU/512 MiB and Redis half a CPU/128 MiB. The run used PostgreSQL 17.11 Alpine 3.24, Redis 8.2.10 Alpine 3.22, one application artifact, the sample policy and existing quotas. Before warm-up, the database held 100,000 transactions, 100,000 evaluations and 500,000 rule results.
+On 2026-10-16, the local benchmark ran on Docker Desktop 29.8.2/aarch64 with ten Docker CPUs and an approximately 8 GiB VM. Each app had one CPU/512 MiB, PostgreSQL one CPU/512 MiB and Redis half a CPU/128 MiB. The run used PostgreSQL 17.11 Alpine 3.24, Redis 8.2.10 Alpine 3.22, one application artifact, the sample policy and existing quotas. Before warm-up, the database held 100,000 seeded events plus seven events from the preceding recovery checks: 100,007 transactions, 100,007 evaluations and 500,035 rule results.
 
 | Profile | Rate / duration | Sent | p95 / p99 | Drops / denials |
 | --- | --- | --- | --- | --- |
-| One instance | 20/s, 300 seconds | 6,000 | 24.6 / 28.4 ms | 0 / 0 |
-| Two instances | 20/s, 300 seconds | 6,000 | 25.0 / 32.5 ms | 0 / 0 |
-| One hot customer across two instances | 5/s, 60 seconds | 300 | 40.2 / 51.7 ms | 0 / 0 |
-| Mixed reads/writes across two instances | 20/s, 60 seconds | 1,200 | 20.5 / 23.5 ms | 0 / 0 |
+| One instance | 20/s, 300 seconds | 6,000 | 22.6 / 26.3 ms | 0 / 0 |
+| Two instances | 20/s, 300 seconds | 6,000 | 24.1 / 29.1 ms | 0 / 0 |
+| One hot customer across two instances | 5/s, 60 seconds | 300 | 40.9 / 66.8 ms | 0 / 0 |
+| Mixed reads/writes across two instances | 20/s, 60 seconds | 1,200 | 20.4 / 24.1 ms | 0 / 0 |
 
-
-Every main, hot-customer and mixed request succeeded, and all checked financial invariants passed. The overload offered 3,000 arrivals: 2,929 were sent, 316 committed, 2,613 received 429 and the bounded generator dropped 71. A full 15-second target window then passed without drops or denials, finishing about 18.8 seconds after overload arrivals ended. There were no unexpected HTTP/transport errors, restarts or quota resets. The final 114,476 evaluations and 572,380 results had no orphan, sequence, watermark or navigation mismatch.
+Every main, hot-customer and mixed request succeeded, and all checked financial invariants passed. The overload offered 3,000 arrivals: 2,927 were sent, 316 committed, 2,611 received 429 and the bounded generator dropped 73. A full 15-second target window then passed without drops or denials, finishing about 18.8 seconds after overload arrivals ended. There were no unexpected HTTP/transport errors, restarts or quota resets. The final 114,483 evaluations and 572,415 results had no orphan, sequence, watermark or navigation mismatch.
 
 These figures apply to this workload and environment. They do not establish maximum throughput, long-term retention, larger history distributions, thousand-per-second capacity or production SLOs. In particular, 300/second was an overload test, not a supported throughput claim. The harness saves the full manifest and resource samples under `target/operations/`.
 
@@ -132,21 +131,21 @@ These figures apply to this workload and environment. They do not establish maxi
 
 CI keeps operational/scaling results and bounded failure logs, with generated test credentials redacted. It does not upload raw scanner secret findings. Reports identify the command, commit or artifact digest, dependency versions, fixture/policy hashes, environment, UTC time and outcome. Clean-clone runtime checks are recorded separately from CI build success.
 
-## Local release checks
+## Release checks
 
-On 2026-10-16, the public repository at `84cd2e5` was cloned into an empty checkout and the candidate changes were applied without copying existing secrets or build output. The run passed 320 Java tests, the then-current 10 helper tests, Docker build, the README evaluation/replay/query and stop/start steps, smoke, recovery, legacy migration, security scans and the benchmark above. Final startup/scanner refinements were rechecked in that checkout. Those refinements did not change the benchmark's request/rule paths, policy, quotas or resource limits. This was local validation; it did not dispatch GitHub Actions.
+The published `eedc457` passed [Linux GitHub Actions](https://github.com/SibusisoMashita/fraud-rule-engine-service/actions/runs/38949782146) on 2026-10-16: 320 Java tests, 16 helper tests, Docker build and lifecycle, load balancing and automatic scaling, recovery/restore, legacy migration and the full security gate. The optional capacity benchmark was skipped for that push; the measured local benchmark above is separate evidence.
+
+The final local review on 2026-10-16 passed 321 Java tests and 16 helper tests, Docker build and lifecycle, extended HAProxy/automatic-scaling checks, recovery, legacy migration, the full security gate and the standard benchmark above.
+
+A fresh public clone at `eedc457`, with the review's documentation and regression-test changes applied, built and started without copying existing secrets or build output. It passed the README create/replay/query workflow, Swagger, live policy activation without replacing the app container, and stop/start persistence. The Postman collection passed two iterations: 34 requests and 170 assertions. Java tests ran in the main review checkout; the clean clone separately verified Docker startup and API behaviour.
 
 The legacy migration drill starts the last pinned Debian database on its own volume and restores into an empty, guarded Alpine volume. It rejects direct legacy-directory reuse, checks UTF-8 and built-in locales, and preserves responses, fingerprints, ownership and API permissions. See [Database image migration](OPERATIONS.md#database-image-migration). The small restore fixture does not establish production recovery-time or data-loss targets.
 
-The recovery harness now keeps its commit-fault route inside Docker. It passed [Linux GitHub Actions at `90aa389`](https://github.com/SibusisoMashita/fraud-rule-engine-service/actions/runs/38892321964). The helper suite now contains 15 tests; the newer load-balancer/demo candidate still needs its own CI confirmation.
-
 ### Load balancing and local autoscaling
-
-The 2026-10-16 candidate was also checked from a fresh public clone at `90aa389` with the uncommitted changes applied. It passed 320 Java tests, 15 helper tests, Docker build, smoke, recovery, legacy migration, extended through-proxy checks, the plain scaling demo and all deployment/test-image scans. The scans found zero HIGH/CRITICAL vulnerabilities and zero detected secrets at that time; dated scans do not promise permanent security or detection of every exploit.
 
 The proxy checks use one HAProxy entrypoint. They cover distribution, authentication/roles, forged forwarding headers, shared quotas, duplicates, live policy changes, failure/removal/recovery, alive-but-unready instances, no-ready rejection and body limits. Writes during drained scale-in keep complete results. Helpers check sustained demand, cooldown, missing readiness/metrics and connection budgets.
 
-The final extended demo completed 240 authenticated reads at eight/second with no drops or denials, used both backends and automatically scaled **one → two → one**. Neither application replicas nor the database published host ports. An unavailable-Docker check also confirmed credential cleanup after a partial startup failure. Reports stay under `target/scaling/`. The earlier benchmark uses direct application ports; this demo does not measure load-balanced maximum capacity or managed production autoscaling. See [Scaling](SCALING.md).
+The final extended demo completed 240 authenticated reads at eight/second with no drops or denials, used both backends and automatically scaled **one → two → one**. Neither application replicas nor the database published host ports. An unavailable-Docker check also confirmed credential cleanup after a partial startup failure. Reports stay under `target/scaling/`. The benchmark above uses direct application ports; this demo does not measure load-balanced maximum capacity or managed production autoscaling. See [Scaling](SCALING.md).
 
 ## Before a real-data deployment
 

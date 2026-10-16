@@ -27,7 +27,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import za.co.sibusiso.fraud.configuration.*;
 import za.co.sibusiso.fraud.evaluation.*;
-import za.co.sibusiso.fraud.ingress.CredentialAuthenticator;
+import za.co.sibusiso.fraud.ingress.security.Caller;
+import za.co.sibusiso.fraud.ingress.security.CredentialAuthenticator;
+
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -199,7 +201,7 @@ class EvaluationQueryTest {
         var who=identity();doThrow(new QueryTimeoutException("Synthetic private query detail")).when(queryStore).page(anyString(),any());
         var failed=page(who,Map.of());assertThat(failed.statusCode()).as(failed.body()).isEqualTo(503);assertThat(failed.body()).contains("NOT_ACCEPTED").doesNotContain("Synthetic","SELECT");
         assertCounts(who,0);reset(queryStore);assertThat(page(who,Map.of()).statusCode()).isEqualTo(200);
-        var caller=new za.co.sibusiso.fraud.ingress.Caller(who.keyId(),who.scope(),Set.of(za.co.sibusiso.fraud.ingress.Caller.Role.READ),Set.of(),1);
+        var caller=new za.co.sibusiso.fraud.ingress.security.Caller(who.keyId(),who.scope(),Set.of(za.co.sibusiso.fraud.ingress.security.Caller.Role.READ),Set.of(),1);
         assertThatThrownBy(()->queries.list(caller,new EvaluationQuery.Request(null,null,null,null,null,null),()->0)).isInstanceOf(FlowFailure.class);
         String previous=database("fraud_runtime").queryForObject("SELECT policy_hash FROM fraud.policy_head WHERE singleton",String.class);
         database("fraud_policy_admin").queryForObject("SELECT fraud.activate_policy(?,?,false)",String.class,"0".repeat(64),"schemaVersion: 999");

@@ -232,6 +232,7 @@ class ScalingTest(unittest.TestCase):
                        'NetworkSettings': {'Networks': {'default': {'IPAddress': address}}}}
                       for index, name, address in [(1, 'first', '10.0.0.1'), (2, 'second', '10.0.0.2')]]
         stack.runtime.return_value = '# srv_name srv_addr\napp1 10.0.0.1\napp2 10.0.0.2\n'
+        stack.backend_names.side_effect = lambda container: BalancedStack.backend_names(stack, container)
         other = {'svname': 'app1', 'scur': '3', 'qcur': '2'}
         stack.servers.side_effect = [[other, {'svname': 'app2', 'scur': active, 'qcur': queued}]
                                      for active, queued in [('1', '0'), ('0', '1'), ('0', '0')]]
