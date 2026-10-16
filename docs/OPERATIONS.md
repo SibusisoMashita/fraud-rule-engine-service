@@ -202,7 +202,7 @@ Each run creates a separate `fraud-ops-*` Docker project with its own credential
 
 The harness targets a local engine.
 
-Its commit-fault proxy runs in a pinned, non-root, resource-bounded Python sidecar on the disposable Compose network, with no published port or host-gateway dependency. Controls use Docker exec and private tmpfs flags; the proxy receives no mounted credentials and logs no wire payloads. TLS is disabled only for that isolated fault connection. It drops one PostgreSQL `CommandComplete(COMMIT)` response, then verifies UNKNOWN, one committed row and identical replay. This tests database commit failures; HAProxy handles HTTP traffic separately.
+Its commit-fault proxy runs in a pinned, non-root, resource-bounded Python sidecar on the disposable Compose network, with no published port or host-gateway dependency. Controls use Docker exec and private tmpfs flags; the proxy receives no mounted credentials and logs no wire payloads. Both relay connections use `TCP_NODELAY` to avoid Nagle/delayed-ACK delays during database startup. TLS is disabled only for that isolated fault connection. It drops one PostgreSQL `CommandComplete(COMMIT)` response, then verifies UNKNOWN, one committed row and identical replay. This tests database commit failures; HAProxy handles HTTP traffic separately.
 
 Recovery checks stop dependencies, saturate blocked writes, kill an app during a real uncommitted write and after commit, discard a caller's HTTP response, drain an in-flight write through SIGTERM, check incompatible-schema readiness and rerun migrations. Timeout checks assert no accepted state, no idle transactions and successful subsequent work. They verify actual financial state after faults rather than treating HTTP errors as proof of rollback.
 

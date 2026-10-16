@@ -44,7 +44,10 @@ class CommitProxy:
             client = None
             try:
                 client, _ = self.listener.accept()
+                # Short PostgreSQL frames must not wait for Nagle/delayed-ACK cycles.
+                client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 server = socket.create_connection(self.upstream, timeout=5)
+                server.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 server.settimeout(None)
             except socket.timeout:
                 if client is not None:
