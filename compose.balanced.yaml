@@ -1,0 +1,29 @@
+# Optional single-entrypoint deployment; normal single-instance Compose stays available.
+services:
+  app:
+    ports: !reset []
+  load-balancer:
+    image: haproxy:3.2-alpine@sha256:254e6370f01cd654e0744edf607c67f33777c1b6a9dc0d4b28bcba7171460122
+    user: haproxy
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 64m
+    cpus: 0.5
+    pids_limit: 64
+    environment:
+      FRAUD_MAX_REPLICAS: ${FRAUD_MAX_REPLICAS:-2}
+      FRAUD_DEMO_HEADERS: ${FRAUD_DEMO_HEADERS:-false}
+    ports: ['127.0.0.1:${BALANCER_PORT:-8080}:8080']
+    volumes:
+      - ./docker/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    healthcheck:
+      test: [CMD, haproxy, -c, -f, /usr/local/etc/haproxy/haproxy.cfg]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    stop_signal: SIGUSR1
+    stop_grace_period: 45s
+    depends_on:
+      app: {condition: service_healthy}

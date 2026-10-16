@@ -33,6 +33,8 @@ jobs:
         run: docker compose build app
       - name: Verify Compose lifecycle
         run: ./scripts/smoke.sh
+      - name: Verify load balancing and Docker autoscaling demo
+        run: python3 -B scripts/demo-scaling.py --verify
       - name: Verify recovery and restore
         run: python3 -B scripts/verify-operations.py --suite recovery
       - name: Verify legacy database upgrade
@@ -48,6 +50,8 @@ jobs:
           path: |
             target/operations/**/results.json
             target/operations/**/*failure.log
+            target/scaling/**/results.json
+            target/scaling/**/*failure.log
           if-no-files-found: ignore
           retention-days: 14
   security:

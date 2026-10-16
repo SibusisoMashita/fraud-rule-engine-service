@@ -1,0 +1,14 @@
+{
+  "minReplicas": 1,
+  "maxReplicas": 2,
+  "targetSuccessesPerSecondPerReplica": 4,
+  "scaleInUtilization": 0.5,
+  "scaleOutSamples": 2,
+  "scaleInSamples": 3,
+  "pollSeconds": 2,
+  "cooldownSeconds": 15,
+  "busyRequestsPerSecond": 8,
+  "busySeconds": 30,
+  "quietSeconds": 35,
+  "drainSeconds": 35
+}

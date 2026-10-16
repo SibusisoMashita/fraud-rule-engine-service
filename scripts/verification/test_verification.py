@@ -10,7 +10,7 @@ import struct
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from faults import CommitProxy, receive
 from stack import ROOT, Stack, command
@@ -219,6 +219,75 @@ class InventoryTest(unittest.TestCase):
                 pass
             with self.assertRaises(AssertionError):
                 verify({'components': []}, jar)
+
+
+class ScalingTest(unittest.TestCase):
+    def test_scale_in_waits_for_active_and_queued_work_before_stopping_its_target(self):
+        import json
+        from balancing import BalancedStack
+        stack = Mock(spec=BalancedStack)
+        stack.scaling = {'minReplicas': 1, 'maxReplicas': 2, 'drainSeconds': 5}
+        stack.replicas.return_value = ['second', 'first']
+        containers = [{'Id': name, 'Config': {'Labels': {'com.docker.compose.container-number': str(index)}},
+                       'NetworkSettings': {'Networks': {'default': {'IPAddress': address}}}}
+                      for index, name, address in [(1, 'first', '10.0.0.1'), (2, 'second', '10.0.0.2')]]
+        stack.runtime.return_value = '# srv_name srv_addr\napp1 10.0.0.1\napp2 10.0.0.2\n'
+        other = {'svname': 'app1', 'scur': '3', 'qcur': '2'}
+        stack.servers.side_effect = [[other, {'svname': 'app2', 'scur': active, 'qcur': queued}]
+                                     for active, queued in [('1', '0'), ('0', '1'), ('0', '0')]]
+
+        def drain(predicate, *_):
+            for expected in (False, False, True):
+                self.assertFalse(any(call.args[0][1] == 'stop' for call in execute.call_args_list))
+                self.assertEqual(predicate(), expected)
+
+        with patch('balancing.command', return_value=json.dumps(containers).encode()) as execute, \
+                patch('balancing.wait_for', side_effect=drain):
+            self.assertEqual(BalancedStack.scale(stack, 1), 1)
+        stack.set_state.assert_called_once_with('app2', 'drain')
+        self.assertEqual([call.args[0] for call in execute.call_args_list[1:]],
+                         [['docker', 'stop', 'second'], ['docker', 'rm', 'second']])
+        stack.wait_ready.assert_called_once_with(1)
+
+    def test_scaling_requires_sustained_demand_and_obeys_cooldown_and_bounds(self):
+        from balancing import ScalingDecision, settings
+        values = settings()
+        controller = ScalingDecision(values)
+        now = 0
+        current = values['minReplicas']
+        for _ in range(values['scaleOutSamples'] - 1):
+            self.assertEqual(controller.decide(100, current, current, now), current)
+            now += values['pollSeconds']
+        self.assertEqual(controller.decide(100, current, current, now), current + 1)
+        current += 1
+        self.assertEqual(controller.decide(0, current, current, now + 1), current)
+        now += values['cooldownSeconds']
+        for _ in range(values['scaleInSamples'] - 1):
+            self.assertEqual(controller.decide(0, current, current, now), current)
+            now += values['pollSeconds']
+        self.assertEqual(controller.decide(0, current, current, now), current - 1)
+        for i in range(values['scaleOutSamples'] + 1):
+            self.assertEqual(controller.decide(100, values['maxReplicas'], values['maxReplicas'], now + 100 + i), values['maxReplicas'])
+
+    def test_dependency_failure_and_invalid_metrics_do_not_trigger_scaling(self):
+        from balancing import ScalingDecision, settings
+        values = settings()
+        controller = ScalingDecision(values)
+        for i in range(10):
+            self.assertEqual(controller.decide(100, values['minReplicas'], 0, i), values['minReplicas'])
+            self.assertEqual(controller.decide(None, values['minReplicas'], values['minReplicas'], i), values['minReplicas'])
+            self.assertEqual(controller.decide(float('nan'), values['minReplicas'], values['minReplicas'], i), values['minReplicas'])
+            self.assertEqual(controller.decide(-1, values['minReplicas'], values['minReplicas'], i), values['minReplicas'])
+
+    def test_invalid_scaling_settings_and_connection_budget_fail_before_startup(self):
+        from balancing import settings
+        import json
+        base = json.loads((ROOT / 'config/scaling-demo.example.json').read_text())
+        for change in [{'maxReplicas': 100}, {'minReplicas': 0}, {'scaleInUtilization': 1}, {'extra': 1}, {'maxReplicas': True}]:
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'settings.json'
+                path.write_text(json.dumps({**base, **change}))
+                with self.assertRaises(AssertionError): settings(path)
 
 
 if __name__ == '__main__':

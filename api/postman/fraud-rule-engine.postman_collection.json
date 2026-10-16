@@ -1,0 +1,1181 @@
+{
+  "info": {
+    "_postman_id": "80656bed-0629-4712-9d39-8457274fbac4",
+    "name": "Fraud Rule Engine Service",
+    "description": "Explore the API and check a small, repeatable workflow on your local stack.\n\n1. Import this collection and local.postman_environment.json.\n2. Select **Fraud — Local**. Set the sensitive **apiKey** environment value to your generated local key, with ingest, read and policy roles. Keep credentials local; do not share or export them.\n3. Check **baseUrl**: Docker quickstart uses http://localhost:8080; IntelliJ Compose uses http://localhost:8081.\n4. Start the service using the README quickstart. Run the whole collection once, or send requests from top to bottom.\n\nA complete run writes **two synthetic booked purchases**. Fresh UUIDs isolate each workflow. There is no delete endpoint; use a disposable local database to discard demo data. Health probes work on the application port and through the optional loopback load balancer.\n\nThe first create resets the nonsecret **workflow** collection variable. It saves the payload, result and cursor for manual sends. Keep workflow empty when exporting. Example amounts are editable; fraud settings remain in the database.\n\nExpected errors should pass their tests. These checks complement the repository’s rule, security, recovery and scaling suites; see the README and docs/TESTING.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "exampleAmount",
+      "value": "25000.01",
+      "type": "string",
+      "description": "Illustrative positive amount, not a fraud threshold."
+    },
+    {
+      "key": "exampleCurrency",
+      "value": "ZAR",
+      "type": "string",
+      "description": "Use a currency supported by the active policy."
+    },
+    {
+      "key": "workflow",
+      "value": "",
+      "type": "string",
+      "description": "Synthetic workflow state. First create resets it; export with this empty."
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response is JSON\", () => {",
+          "    pm.expect(pm.response.headers.get(\"Content-Type\")).to.match(/^application\\/(?:problem\\+)?json\\b/i);",
+          "});",
+          "const body = pm.response.json();",
+          "const isBusinessRequest = pm.request.url.getPath().startsWith(\"/api/v1/\");",
+          "if (isBusinessRequest) {",
+          "    pm.test(\"Sensitive response is not cached and has a correlation ID\", () => {",
+          "        pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\");",
+          "        pm.expect(pm.response.headers.get(\"X-Correlation-ID\")).to.match(/^[a-zA-Z0-9._:-]+$/);",
+          "    });",
+          "}",
+          "if (pm.response.code >= 400) {",
+          "    pm.test(\"Problem describes this rejected request\", () => {",
+          "        pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\");",
+          "        pm.expect(body).to.include.keys(\"type\", \"title\", \"status\", \"code\", \"correlationId\", \"retryable\", \"outcome\");",
+          "        pm.expect(body.status).to.equal(pm.response.code);",
+          "        pm.expect(body.code).to.match(/^[A-Z][A-Z0-9_]+$/);",
+          "        pm.expect(body.correlationId).to.equal(pm.response.headers.get(\"X-Correlation-ID\"));",
+          "        pm.expect(body.retryable).to.equal(false);",
+          "        pm.expect(body.outcome).to.equal(\"NOT_ACCEPTED\");",
+          "    });",
+          "}",
+          "function checkEvaluation(evaluation) {",
+          "    pm.expect(evaluation).to.include.keys(\"id\", \"eventId\", \"decision\", \"coverage\", \"policyHash\", \"buildId\", \"acceptedAt\", \"evaluatedAt\", \"contextHighWatermark\", \"ruleResults\");",
+          "    pm.expect(evaluation.id).to.match(/^[a-f0-9-]{36}$/i);",
+          "    pm.expect(evaluation.decision).to.be.oneOf([\"CLEAR\", \"FLAGGED\", \"INDETERMINATE\"]);",
+          "    pm.expect(evaluation.coverage).to.be.oneOf([\"COMPLETE\", \"PARTIAL\"]);",
+          "    pm.expect(evaluation.policyHash).to.match(/^[a-f0-9]{64}$/);",
+          "    pm.expect(Number.isNaN(Date.parse(evaluation.acceptedAt))).to.equal(false);",
+          "    pm.expect(Number.isNaN(Date.parse(evaluation.evaluatedAt))).to.equal(false);",
+          "    pm.expect(evaluation.ruleResults).to.be.an(\"array\").that.is.not.empty;",
+          "    const ids = evaluation.ruleResults.map(rule => rule.ruleId);",
+          "    pm.expect(new Set(ids).size).to.equal(ids.length);",
+          "    evaluation.ruleResults.forEach(rule => {",
+          "        pm.expect(rule).to.include.keys(\"ruleId\", \"algorithmVersion\", \"status\", \"reasonCode\", \"evidence\");",
+          "        pm.expect(rule.status).to.be.oneOf([\"MATCH\", \"NO_MATCH\", \"NOT_APPLICABLE\", \"INSUFFICIENT_DATA\", \"DISABLED\"]);",
+          "        pm.expect(rule.evidence).to.be.an(\"object\");",
+          "    });",
+          "}",
+          "if (pm.response.code < 400 && body.evaluation) {",
+          "    pm.test(\"Transaction and evaluation use the same event ID\", () => {",
+          "        pm.expect(body.transaction).to.be.an(\"object\");",
+          "        pm.expect(body.transaction.eventId).to.equal(body.evaluation.eventId);",
+          "    });",
+          "    pm.test(\"Evaluation contains versioned rule results\", () => checkEvaluation(body.evaluation));",
+          "}",
+          "if (pm.response.code < 400 && Array.isArray(body.items)) {",
+          "    pm.test(\"Every page item is an evaluation\", () => body.items.forEach(checkEvaluation));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Check the service",
+      "description": "Readiness expects a healthy local stack. Policy inspection requires the policy role.",
+      "item": [
+        {
+          "name": "01 Liveness",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/health/live",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health",
+                "live"
+              ]
+            },
+            "description": "Checks that the process is running. No API key is needed.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Process is live\", () => pm.expect(pm.response.json()).to.deep.equal({status: \"UP\"}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 Readiness",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/health/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health",
+                "ready"
+              ]
+            },
+            "description": "Checks database, Redis, schema and active policy readiness. Returns only status; no API key is required.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Service is ready\", () => pm.expect(pm.response.json()).to.deep.equal({status: \"UP\"}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 Active rule policy",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rules"
+              ]
+            },
+            "description": "Inspect the active database policy, including disabled rules and their settings. Requires the policy role. Changes appear without restarting; this collection does not change policy."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Active policy has typed rule settings\", () => {",
+                  "    const policy = pm.response.json();",
+                  "    pm.expect(policy.policyHash).to.match(/^[a-f0-9]{64}$/);",
+                  "    pm.expect(policy.rules).to.be.an(\"array\").that.is.not.empty;",
+                  "    pm.expect(new Set(policy.rules.map(rule => rule.ruleId)).size).to.equal(policy.rules.length);",
+                  "    policy.rules.forEach(rule => {",
+                  "        pm.expect(rule).to.include.keys(\"ruleId\", \"algorithmVersion\", \"enabled\", \"settings\");",
+                  "        pm.expect(rule.enabled).to.be.a(\"boolean\");",
+                  "        pm.expect(rule.settings).to.be.an(\"object\");",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Create, replay and query",
+      "description": "Send in order once per workflow, or run the collection once. The first create starts fresh synthetic IDs.",
+      "item": [
+        {
+          "name": "01 Create a transaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ]
+            },
+            "description": "Starts fresh synthetic IDs and a current UTC timestamp. This writes one booked online purchase; it makes no physical-location claim. The editable amount and currency are examples, not fraud thresholds. Read the returned rule results to see the active policy’s decision.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Start fresh; replay keeps this exact payload.",
+                  "const runId = pm.variables.replaceIn(\"{{$guid}}\");",
+                  "const now = Date.now();",
+                  "const workflow = {",
+                  "    payload: {",
+                  "        eventId: \"postman-\" + runId,",
+                  "        customerId: \"postman-customer-\" + runId,",
+                  "        instrumentId: \"postman-card-\" + runId,",
+                  "        transactionType: \"CARD_PURCHASE\",",
+                  "        status: \"BOOKED\",",
+                  "        channel: \"ECOMMERCE\",",
+                  "        amount: pm.collectionVariables.get(\"exampleAmount\"),",
+                  "        currency: pm.collectionVariables.get(\"exampleCurrency\"),",
+                  "        category: \"GROCERIES\",",
+                  "        occurredAt: new Date(now).toISOString()",
+                  "    },",
+                  "    acceptedFrom: new Date(now - 60000).toISOString(),",
+                  "    acceptedTo: new Date(now + 3600000).toISOString()",
+                  "};",
+                  "pm.collectionVariables.set(\"workflow\", JSON.stringify(workflow));",
+                  "pm.variables.set(\"requestPayload\", JSON.stringify(workflow.payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\"));",
+                  "const result = pm.response.json();",
+                  "pm.test(\"Created this workflow's transaction\", () => {",
+                  "    pm.expect(result.transaction.eventId).to.equal(workflow.payload.eventId);",
+                  "    pm.expect(result.transaction.customerId).to.equal(workflow.payload.customerId);",
+                  "    pm.expect(result.transaction.instrumentId).to.equal(workflow.payload.instrumentId);",
+                  "    pm.expect(pm.response.headers.get(\"Location\")).to.equal(\"/api/v1/transactions/\" + workflow.payload.eventId);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    workflow.firstResponse = result;",
+                  "    pm.collectionVariables.set(\"workflow\", JSON.stringify(workflow));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 Replay the same transaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ]
+            },
+            "description": "Resends the saved payload, including the original event ID and timestamp. Expect HTTP 200 with the original evaluation. Keep the timestamp unchanged for retries.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "pm.variables.set(\"requestPayload\", JSON.stringify(workflow.payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "pm.test(\"Replay returns the original stored response\", () => {",
+                  "    pm.expect(workflow.firstResponse, \"Original create response\").to.be.an(\"object\");",
+                  "    pm.expect(pm.response.json()).to.deep.equal(workflow.firstResponse);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 Retrieve the transaction",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions/{{eventId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions",
+                "{{eventId}}"
+              ]
+            },
+            "description": "Retrieves the original transaction and evaluation in the API key’s scope. Requires the read role."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "pm.variables.set(\"eventId\", workflow.payload.eventId);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "pm.test(\"Retrieval returns the original stored response\", () => {",
+                  "    pm.expect(workflow.firstResponse, \"Original create response\").to.be.an(\"object\");",
+                  "    pm.expect(pm.response.json()).to.deep.equal(workflow.firstResponse);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 Create a second transaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ]
+            },
+            "description": "Writes another event for this workflow’s customer and instrument so pagination has two results. Send once per workflow. Assertions assume no fixed fraud threshold or rule count.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "workflow.secondPayload = Object.assign({}, workflow.payload, {",
+                  "    eventId: \"postman-\" + pm.variables.replaceIn(\"{{$guid}}\"),",
+                  "    occurredAt: new Date().toISOString()",
+                  "});",
+                  "pm.collectionVariables.set(\"workflow\", JSON.stringify(workflow));",
+                  "pm.variables.set(\"requestPayload\", JSON.stringify(workflow.secondPayload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "const result = pm.response.json();",
+                  "pm.test(\"Second event belongs to the same synthetic customer\", () => {",
+                  "    pm.expect(result.transaction.eventId).to.equal(workflow.secondPayload.eventId);",
+                  "    pm.expect(result.transaction.customerId).to.equal(workflow.payload.customerId);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    workflow.secondResponse = result;",
+                  "    pm.collectionVariables.set(\"workflow\", JSON.stringify(workflow));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 List the first page",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/evaluations?customerId={{customerId}}&acceptedFrom={{acceptedFrom}}&acceptedTo={{acceptedTo}}&pageSize=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "evaluations"
+              ],
+              "query": [
+                {
+                  "key": "customerId",
+                  "value": "{{customerId}}"
+                },
+                {
+                  "key": "acceptedFrom",
+                  "value": "{{acceptedFrom}}"
+                },
+                {
+                  "key": "acceptedTo",
+                  "value": "{{acceptedTo}}"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Lists this workflow’s customer with a page size of one. The generated date bounds cover the demo, not a fraud-rule window. Keep filters, bounds and page size unchanged for the next cursor. Pages are a live view, not a reconciliation snapshot."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "if (!workflow.secondResponse) throw new Error(\"Send '04 Create a second transaction' before the pagination requests.\");",
+                  "pm.variables.set(\"customerId\", workflow.payload.customerId);",
+                  "pm.variables.set(\"acceptedFrom\", workflow.acceptedFrom);",
+                  "pm.variables.set(\"acceptedTo\", workflow.acceptedTo);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "const page = pm.response.json();",
+                  "pm.test(\"First page has one workflow evaluation and a next cursor\", () => {",
+                  "    pm.expect(page.items).to.have.lengthOf(1);",
+                  "    pm.expect(page.items[0].eventId).to.be.oneOf([workflow.payload.eventId, workflow.secondPayload.eventId]);",
+                  "    pm.expect(page.nextCursor).to.be.a(\"string\").that.is.not.empty;",
+                  "});",
+                  "if (pm.response.code === 200 && page.nextCursor) {",
+                  "    workflow.nextCursor = page.nextCursor;",
+                  "    workflow.firstPageId = page.items[0].id;",
+                  "    pm.collectionVariables.set(\"workflow\", JSON.stringify(workflow));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 Follow the next cursor",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/evaluations?customerId={{customerId}}&acceptedFrom={{acceptedFrom}}&acceptedTo={{acceptedTo}}&pageSize=1&cursor={{cursor}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "evaluations"
+              ],
+              "query": [
+                {
+                  "key": "customerId",
+                  "value": "{{customerId}}"
+                },
+                {
+                  "key": "acceptedFrom",
+                  "value": "{{acceptedFrom}}"
+                },
+                {
+                  "key": "acceptedTo",
+                  "value": "{{acceptedTo}}"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "1"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}"
+                }
+              ]
+            },
+            "description": "Uses the saved cursor and repeats the original filters and page size. The next page contains the other workflow evaluation."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "if (!workflow.secondResponse) throw new Error(\"Send '04 Create a second transaction' before the pagination requests.\");",
+                  "pm.variables.set(\"customerId\", workflow.payload.customerId);",
+                  "pm.variables.set(\"acceptedFrom\", workflow.acceptedFrom);",
+                  "pm.variables.set(\"acceptedTo\", workflow.acceptedTo);",
+                  "",
+                  "if (!workflow.nextCursor) throw new Error(\"Send '05 List the first page' to capture its cursor.\");",
+                  "pm.variables.set(\"cursor\", workflow.nextCursor);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "pm.test(\"Next page has the other workflow evaluation\", () => {",
+                  "    const page = pm.response.json();",
+                  "    pm.expect(page.items).to.have.lengthOf(1);",
+                  "    pm.expect(page.items[0].id).not.to.equal(workflow.firstPageId);",
+                  "    pm.expect(page.items[0].eventId).to.be.oneOf([workflow.payload.eventId, workflow.secondPayload.eventId]);",
+                  "    pm.expect(page).not.to.have.property(\"nextCursor\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 Filter by the returned decision",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/evaluations?customerId={{customerId}}&decision={{decision}}&acceptedFrom={{acceptedFrom}}&acceptedTo={{acceptedTo}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "evaluations"
+              ],
+              "query": [
+                {
+                  "key": "customerId",
+                  "value": "{{customerId}}"
+                },
+                {
+                  "key": "decision",
+                  "value": "{{decision}}"
+                },
+                {
+                  "key": "acceptedFrom",
+                  "value": "{{acceptedFrom}}"
+                },
+                {
+                  "key": "acceptedTo",
+                  "value": "{{acceptedTo}}"
+                }
+              ]
+            },
+            "description": "Filters using the first evaluation’s actual decision. This still works when policy changes; it assumes no particular decision for the example amount."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "if (!workflow.firstResponse) throw new Error(\"Create a successful transaction first.\");",
+                  "pm.variables.set(\"customerId\", workflow.payload.customerId);",
+                  "pm.variables.set(\"decision\", workflow.firstResponse.evaluation.decision);",
+                  "pm.variables.set(\"acceptedFrom\", workflow.acceptedFrom);",
+                  "pm.variables.set(\"acceptedTo\", workflow.acceptedTo);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "pm.test(\"Decision filter includes the original evaluation\", () => {",
+                  "    const page = pm.response.json();",
+                  "    pm.expect(page.items.map(item => item.id)).to.include(workflow.firstResponse.evaluation.id);",
+                  "    page.items.forEach(item => pm.expect(item.decision).to.equal(workflow.firstResponse.evaluation.decision));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Expected failures",
+      "description": "These safe negative examples should pass. Run the create workflow first. Invalid requests must not create new transactions.",
+      "item": [
+        {
+          "name": "01 Missing API key",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/evaluations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "evaluations"
+              ]
+            },
+            "description": "Deliberately overrides inherited authentication. No API key is sent; expect HTTP 401. This is an authentication example, not a brute-force test.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"Expected problem code\", () => pm.expect(pm.response.json().code).to.equal(\"INVALID_CREDENTIAL\"));",
+                  "pm.test(\"API-key challenge is returned\", () => pm.expect(pm.response.headers.get(\"WWW-Authenticate\")).to.equal(\"ApiKey\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 Unknown transaction",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions/{{missingEventId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions",
+                "{{missingEventId}}"
+              ]
+            },
+            "description": "Uses a fresh UUID that was never submitted. Absent and inaccessible transactions share this 404 response shape."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"missingEventId\", \"postman-missing-\" + pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Expected problem code\", () => pm.expect(pm.response.json().code).to.equal(\"TRANSACTION_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 Changed replay",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ]
+            },
+            "description": "Changes the original event’s category. HTTP 409 protects the stored event and evaluation. The saved original payload stays intact; normal replay still works afterwards.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "const changed = Object.assign({}, workflow.payload, {category: \"DIFFERENT_CATEGORY\"});",
+                  "pm.variables.set(\"requestPayload\", JSON.stringify(changed));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"Expected problem code\", () => pm.expect(pm.response.json().code).to.equal(\"EVENT_CONTENT_CONFLICT\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 Zero amount",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ]
+            },
+            "description": "A booked outgoing debit must be positive. Zero violates the domain contract, independently of any fraud threshold, and is not stored.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "const invalid = Object.assign({}, workflow.payload, {",
+                  "    eventId: \"postman-invalid-\" + pm.variables.replaceIn(\"{{$guid}}\"),",
+                  "    occurredAt: new Date().toISOString(),",
+                  "    amount: \"0\"",
+                  "});",
+                  "pm.variables.set(\"requestPayload\", JSON.stringify(invalid));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"Expected problem code\", () => pm.expect(pm.response.json().code).to.equal(\"INVALID_TRANSACTION\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 Unknown JSON field",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ]
+            },
+            "description": "Adds an unsupported field to show strict decoding. Expect HTTP 400; no transaction is stored.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "const invalid = Object.assign({}, workflow.payload, {",
+                  "    eventId: \"postman-invalid-\" + pm.variables.replaceIn(\"{{$guid}}\"),",
+                  "    occurredAt: new Date().toISOString(),",
+                  "    unexpectedField: true",
+                  "});",
+                  "pm.variables.set(\"requestPayload\", JSON.stringify(invalid));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Expected problem code\", () => pm.expect(pm.response.json().code).to.equal(\"INVALID_FIELD\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 Unsupported content type",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ]
+            },
+            "description": "Sends JSON text as text/plain. Expect HTTP 415; no transaction is stored.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestPayload}}",
+              "options": {
+                "raw": {
+                  "language": "text"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const workflow = JSON.parse(pm.collectionVariables.get(\"workflow\") || \"{}\");",
+                  "if (!workflow.payload) throw new Error(\"Send '01 Create a transaction' first, then continue in order.\");",
+                  "",
+                  "pm.variables.set(\"requestPayload\", JSON.stringify(workflow.payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 415\", () => pm.response.to.have.status(415));",
+                  "pm.test(\"Expected problem code\", () => pm.expect(pm.response.json().code).to.equal(\"UNSUPPORTED_MEDIA_TYPE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 Unknown query parameter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, application/problem+json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/evaluations?unsupported=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "evaluations"
+              ],
+              "query": [
+                {
+                  "key": "unsupported",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Unknown, empty and duplicate query parameters are rejected. This example sends an unknown parameter and expects HTTP 400."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Expected problem code\", () => pm.expect(pm.response.json().code).to.equal(\"INVALID_QUERY\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

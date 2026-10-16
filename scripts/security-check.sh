@@ -46,5 +46,8 @@ done
 proxy_image=$(python3 -B -c 'import sys; sys.path.insert(0,"scripts/verification"); from commit_fault import build_image; print(build_image())')
 "$scanner" --quiet image --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 \
     --format json --output target/security/commit-proxy.json "$proxy_image" || result=1
+balancer_image=$(docker compose -f compose.yaml -f compose.balanced.yaml config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["load-balancer"]["image"])')
+"$scanner" --quiet image --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 \
+    --format json --output target/security/load-balancer.json "$balancer_image" || result=1
 "$scanner" --version >> target/security/scanner.txt
 exit "$result"

@@ -128,6 +128,9 @@ class Stack:
         self.base_cached = {}
         self.compose('up', '-d', '--no-build', '--wait', '--wait-timeout', str(self.settings['startupTimeoutSeconds']), 'app')
         self.ready()
+        self.provision()
+
+    def provision(self):
         statements = []
         for index in range(self.settings['principals']):
             secret = secrets.token_hex(32)
