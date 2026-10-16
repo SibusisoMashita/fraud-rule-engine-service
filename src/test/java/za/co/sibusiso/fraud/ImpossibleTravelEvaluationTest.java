@@ -36,9 +36,10 @@ import static org.mockito.Mockito.*;
 class ImpossibleTravelEvaluationTest {
     private static final String PASSWORD=TestDatabase.PASSWORD,SECRET="d".repeat(64);
     @Container static final PostgreSQLContainer DATABASE=new PostgreSQLContainer(DockerImageName.parse(
-            "postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3").asCompatibleSubstituteFor("postgres"));
+            TestImages.POSTGRES).asCompatibleSubstituteFor("postgres"))
+            .withEnv("POSTGRES_INITDB_ARGS", TestImages.INITDB_ARGS);
     @Container static final GenericContainer<?> REDIS=new GenericContainer<>(DockerImageName.parse(
-            "redis:8.2@sha256:47670742d7924adbcdb404d1288b6327815b23141969c0939b8e5d61f78c2634"))
+            TestImages.REDIS))
             .withExposedPorts(6379).withCommand("redis-server","--requirepass",PASSWORD);
     @DynamicPropertySource static void dependencies(DynamicPropertyRegistry properties) throws Exception {
         TestDatabase.initialize(DATABASE);

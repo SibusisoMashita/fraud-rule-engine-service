@@ -13,12 +13,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / 'verification'))
 import benchmark
 import recovery
 import seed
+import upgrade
 from stack import ROOT, Stack, check, command
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--suite', choices=('recovery', 'capacity', 'all'), default='all')
+    parser.add_argument('--suite', choices=('recovery', 'capacity', 'upgrade', 'all'), default='all')
     parser.add_argument('--config', type=Path, default=ROOT / 'config/verification.example.json')
     args = parser.parse_args()
     os.chdir(ROOT)
@@ -28,6 +29,8 @@ def main():
     check(all(type(value) is int and value > 0 for key, value in settings.items() if key != 'event' and key != 'maxUnexpectedErrorFraction'),
           'Workload settings must be positive integers')
     check(0 < settings['maxUnexpectedErrorFraction'] < 1, 'Invalid error fraction')
+    if args.suite == 'upgrade':
+        settings['event']['category'] = 'CAFÉ / 日本'
     endpoint = os.environ.get('DOCKER_HOST') or command(['docker', 'context', 'inspect', '--format', '{{.Endpoints.docker.Host}}']).decode().strip()
     check(endpoint.startswith('unix://'), 'This harness requires a local Unix-socket Docker engine')
     output = ROOT / 'target' / 'operations' / (time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()) + '-' + str(os.getpid()))
@@ -52,10 +55,14 @@ def main():
     signal.signal(signal.SIGTERM, terminate)
     try:
         stack = Stack(output, settings)
+        if args.suite == 'upgrade':
+            upgrade.configure_source(stack)
         stack.start()
+        if args.suite == 'upgrade':
+            upgrade.verify_guard(stack, record)
         report['environment'] = stack.manifest()
         save()
-        if args.suite in ('recovery', 'all'):
+        if args.suite in ('recovery', 'upgrade', 'all'):
             recovery.run(stack, record)
         if args.suite in ('capacity', 'all'):
             record('seed', seed.run(stack))

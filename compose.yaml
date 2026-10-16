@@ -18,15 +18,20 @@ x-app: &app
     FRAUD_LIMITS_LOCATION: file:/app/config/service.example.yaml
 services:
   db:
-    image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    image: postgres:17.11-alpine3.24@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     environment:
       POSTGRES_DB: fraud
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/db-admin-password
+      POSTGRES_INITDB_ARGS: --locale-provider=builtin --locale=C.UTF-8
+      FRAUD_DATABASE_FAMILY: postgres17-alpine-builtin-c-utf8-v1
+    entrypoint: [/bin/sh, /usr/local/bin/fraud-postgres-entrypoint.sh]
+    command: [postgres]
     secrets: [db-admin-password, db-migration-password, spring.datasource.password]
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./docker/init-database.sh:/docker-entrypoint-initdb.d/01-roles.sh:ro
+      - ./docker/postgres-entrypoint.sh:/usr/local/bin/fraud-postgres-entrypoint.sh:ro
     mem_limit: 512m
     cpus: 1
     pids_limit: 128
@@ -36,7 +41,7 @@ services:
       timeout: 2s
       retries: 30
   redis:
-    image: redis:8.2@sha256:47670742d7924adbcdb404d1288b6327815b23141969c0939b8e5d61f78c2634
+    image: redis:8.2.10-alpine3.22@sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635
     user: redis
     read_only: true
     tmpfs: ['/tmp:size=16m,mode=1777']
@@ -59,7 +64,7 @@ services:
       timeout: 2s
       retries: 30
   db-bootstrap:
-    image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    image: postgres:17.11-alpine3.24@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     user: postgres
     read_only: true
     cap_drop: [ALL]
@@ -103,7 +108,7 @@ services:
       migrate: {condition: service_completed_successfully}
     restart: 'no'
   identity-seed:
-    image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    image: postgres:17.11-alpine3.24@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     user: postgres
     read_only: true
     cap_drop: [ALL]

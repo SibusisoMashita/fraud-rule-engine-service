@@ -14,3 +14,7 @@ GRANT CONNECT ON DATABASE fraud TO fraud_migrator, fraud_runtime;
 CREATE SCHEMA fraud AUTHORIZATION fraud_migrator;
 GRANT USAGE ON SCHEMA fraud TO fraud_runtime;
 SQL
+# Only a cluster initialized for this image family may be reopened by its guard.
+if [ -n "${FRAUD_DATABASE_FAMILY:-}" ]; then
+    printf '%s\n' "$FRAUD_DATABASE_FAMILY" > "$PGDATA/.fraud-runtime-family"
+fi

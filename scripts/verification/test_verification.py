@@ -1,4 +1,6 @@
 import socket
+import os
+import subprocess
 import hashlib
 import tempfile
 import zipfile
@@ -11,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from faults import CommitProxy, receive
-from stack import command
+from stack import ROOT, command
 from subprocess import CompletedProcess
 from load import accepted, percentile, run, summarize, within_error_budget
 
@@ -100,6 +102,24 @@ class WireFaultTest(unittest.TestCase):
             worker.join(3)
         self.assertFalse(errors)
         self.assertFalse(worker.is_alive())
+
+
+class DatabaseGuardTest(unittest.TestCase):
+    def test_nonempty_partial_and_wrong_family_directories_are_rejected_before_startup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            partial = data / 'partial-cluster'
+            partial.write_bytes(b'preserve-this-data')
+            for version, marker in ((None, None), ('17', 'different-image-family')):
+                if version is not None:
+                    (data / 'PG_VERSION').write_text(version)
+                    (data / '.fraud-runtime-family').write_text(marker)
+                result = subprocess.run(['sh', str(ROOT / 'docker/postgres-entrypoint.sh'), 'postgres'],
+                                        env=dict(os.environ, PGDATA=folder, FRAUD_DATABASE_FAMILY='expected-family'),
+                                        capture_output=True)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(b'Unrecognized PostgreSQL data directory', result.stderr)
+                self.assertEqual(partial.read_bytes(), b'preserve-this-data')
 
 
 class DiagnosticTest(unittest.TestCase):

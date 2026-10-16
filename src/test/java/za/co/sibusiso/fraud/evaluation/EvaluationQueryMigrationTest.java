@@ -17,6 +17,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import za.co.sibusiso.fraud.TestDatabase;
+import za.co.sibusiso.fraud.TestImages;
 import za.co.sibusiso.fraud.configuration.*;
 import za.co.sibusiso.fraud.domain.*;
 import za.co.sibusiso.fraud.ingress.Caller;
@@ -25,7 +26,8 @@ import static org.assertj.core.api.Assertions.*;
 @Testcontainers
 class EvaluationQueryMigrationTest {
     @Container static final PostgreSQLContainer DATABASE=new PostgreSQLContainer(DockerImageName.parse(
-            "postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3").asCompatibleSubstituteFor("postgres"));
+            TestImages.POSTGRES).asCompatibleSubstituteFor("postgres"))
+            .withEnv("POSTGRES_INITDB_ARGS", TestImages.INITDB_ARGS);
     @Test void migrationBackfillsNavigationFieldsWithoutChangingCommittedResourcesOrWritePrivileges() throws Exception {
         TestDatabase.initialize(DATABASE,7);
         var jdbc=new JdbcTemplate(new DriverManagerDataSource(DATABASE.getJdbcUrl(),"fraud_migrator",TestDatabase.PASSWORD));

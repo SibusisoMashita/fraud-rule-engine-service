@@ -174,7 +174,7 @@ class Stack:
             return
         self.closed = True
         try:
-            self.compose('--profile', 'peer', '--profile', 'restore', 'down', '--volumes', '--remove-orphans')
+            self.compose('--profile', '*', 'down', '--volumes', '--remove-orphans')
         finally:
             for path in self.credentials.iterdir():
                 path.unlink()

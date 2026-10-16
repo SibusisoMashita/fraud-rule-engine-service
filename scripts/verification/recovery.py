@@ -64,7 +64,7 @@ def fingerprints(stack, service='db'):
     fields = []
     for table in tables:
         fields.append(f"'{table}',(SELECT encode(sha256(convert_to(coalesce(string_agg(to_jsonb(t)::text,E'\\n' "
-                      f"ORDER BY to_jsonb(t)::text),''),'UTF8')),'hex') FROM fraud.{table} t)")
+                      f"ORDER BY to_jsonb(t)::text COLLATE \"C\"),''),'UTF8')),'hex') FROM fraud.{table} t)")
     return json.loads(stack.sql('SELECT json_build_object(' + ','.join(fields) + ')', service))
 
 
@@ -225,7 +225,13 @@ def run(stack, record):
     check(stack.request('/api/v1/transactions/' + after_backup['eventId'], service='restore-app')[0] == 404, 'Restore hid its RPO boundary')
     replay, _ = post(stack, after_backup, service='restore-app')
     check(post(stack, after_backup, 200, service='restore-app')[0] == replay, 'Restore reconciliation duplicated effect')
+    locale_query = "SELECT json_build_object('provider',datlocprovider,'locale',datlocale,'collate',datcollate,'encoding',pg_encoding_to_char(encoding)) FROM pg_database WHERE datname=current_database()"
+    restored_locale = json.loads(stack.sql(locale_query, 'restore-db'))
+    check(restored_locale['provider'] == 'b' and restored_locale['locale'] == 'C.UTF-8'
+          and restored_locale['encoding'] == 'UTF8', 'Restored database has an unexpected locale/encoding')
     record('isolated-restore', {'restoreAndVerificationSeconds': time.monotonic() - began,
+                               'sourceLocale': json.loads(stack.sql(locale_query)),
+                               'restoredLocale': restored_locale,
                                'backupCounts': before, 'restoredTableHashes': before_hashes, 'acknowledgedMissingAtBoundary': 1,
                                'reconciledMissingEvents': 1, 'invariants': invariant_counts(stack, 'restore-db')})
     stack.compose('stop', 'restore-app', 'restore-db')

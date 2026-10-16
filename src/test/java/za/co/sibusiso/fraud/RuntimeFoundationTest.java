@@ -29,10 +29,11 @@ class RuntimeFoundationTest {
     private static final String PASSWORD = "synthetic-test-password";
     @Container
     static final PostgreSQLContainer DATABASE = new PostgreSQLContainer(DockerImageName.parse(
-            "postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3").asCompatibleSubstituteFor("postgres"));
+            TestImages.POSTGRES).asCompatibleSubstituteFor("postgres"))
+            .withEnv("POSTGRES_INITDB_ARGS", TestImages.INITDB_ARGS);
     @Container
     static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse(
-            "redis:8.2@sha256:47670742d7924adbcdb404d1288b6327815b23141969c0939b8e5d61f78c2634"))
+            TestImages.REDIS))
             .withExposedPorts(6379).withCommand("redis-server", "--requirepass", PASSWORD);
 
     @DynamicPropertySource
@@ -60,6 +61,49 @@ class RuntimeFoundationTest {
         assertThat(jdbc.queryForObject("SHOW lock_timeout", String.class)).isEqualTo("1s");
         assertThat(policies.current().rules()).hasSize(5);
         assertThat(policies.current().policyHash()).matches("[a-f0-9]{64}");
+    }
+
+    @Test
+    void policyAdministrationWaitsForColdConnectionWithoutExtendingRuntimeAcquisition() throws Exception {
+        assertThat(dataSource.getInitializationFailTimeout()).isNegative();
+        try (var context = new org.springframework.context.support.GenericApplicationContext()) {
+            var environment = new org.springframework.mock.env.MockEnvironment()
+                    .withProperty("fraud.limits-location", "classpath:config/service.example.yaml");
+            environment.setActiveProfiles("policy-admin");
+            context.setEnvironment(environment);
+            new za.co.sibusiso.fraud.configuration.LimitsInitializer().initialize(context);
+            long acquire = environment.getRequiredProperty("spring.datasource.hikari.connection-timeout", Long.class);
+            long initialize = environment.getRequiredProperty("spring.datasource.hikari.initialization-fail-timeout", Long.class);
+            assertThat(acquire).isEqualTo(limits.operations().poolAcquireTimeoutMillis());
+            assertThat(initialize).isPositive();
+            var slowDatabase = new org.springframework.jdbc.datasource.AbstractDataSource() {
+                @Override public java.sql.Connection getConnection() throws SQLException {
+                    try { Thread.sleep(acquire * 2); }
+                    catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new SQLException("Interrupted delayed connection", interrupted);
+                    }
+                    return DriverManager.getConnection(DATABASE.getJdbcUrl(), DATABASE.getUsername(), DATABASE.getPassword());
+                }
+                @Override public java.sql.Connection getConnection(String user, String password) throws SQLException {
+                    return getConnection();
+                }
+            };
+            var configuration = new com.zaxxer.hikari.HikariConfig();
+            configuration.setDataSource(slowDatabase);
+            configuration.setMaximumPoolSize(1);
+            configuration.setConnectionTimeout(acquire);
+            configuration.setValidationTimeout(environment.getRequiredProperty("spring.datasource.hikari.validation-timeout", Long.class));
+            configuration.setInitializationFailTimeout(initialize);
+            try (var pool = new com.zaxxer.hikari.HikariDataSource(configuration);
+                    var connection = pool.getConnection();
+                    var statement = connection.createStatement();
+                    var rows = statement.executeQuery("SELECT 1")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getInt(1)).isEqualTo(1);
+                assertThat(pool.getConnectionTimeout()).isEqualTo(acquire);
+            }
+        }
     }
 
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();

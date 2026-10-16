@@ -4,7 +4,7 @@ A Java backend for evaluating categorized transaction events, storing explainabl
 
 **Status:** the transactional flow and five rules are implemented: authenticated `POST /api/v1/transactions` evaluates high amount, transaction velocity, cumulative spend, impossible travel and a small-payment burst followed by a large payment and commits the event, evaluation and complete rule-result set together. Identical retries return the original result; `GET /api/v1/transactions/{eventId}` retrieves it within the caller's scope. Evaluation pages and active rule-policy inspection are available through protected GET endpoints.
 
-Operational recovery and the bounded one/two-instance workload have been verified locally. [Testing](docs/TESTING.md) records the measured limits and open release gates, including dependency-image security review.
+Operational recovery, the bounded one/two-instance workload and fresh-clone release validation have passed locally. [Testing](docs/TESTING.md) records the evidence, measured limits and deployment acceptance requirements.
 
 ## Scope
 
@@ -30,7 +30,7 @@ curl --fail http://localhost:8080/health/live
 curl --fail http://localhost:8080/health/ready
 ```
 
-Readiness may return 503 while the application starts. Only port 8080 is exposed, bound to loopback; PostgreSQL and Redis have no host ports. Use `APP_PORT=18080 docker compose up -d --no-build` if 8080 is occupied. Generated local credentials live in the ignored `secrets/` directory. The script preserves existing secrets. Compose initializes database identities, provisions the local configuration roles, runs migrations and seeds policy and a local demo identity only when absent. It then starts the application. Existing policy and identity changes, including revocation, are preserved on subsequent starts.
+Readiness may return 503 while the application starts. Only port 8080 is exposed, bound to loopback; PostgreSQL and Redis have no host ports. Use `APP_PORT=18080 docker compose up -d --no-build` if 8080 is occupied. Existing Debian PostgreSQL installations require the [logical migration procedure](docs/OPERATIONS.md#database-image-migration); the startup guard rejects their data directory under the new image. Generated local credentials live in the ignored `secrets/` directory. The script preserves existing secrets. Compose initializes database identities, provisions the local configuration roles, runs migrations and seeds policy and a local demo identity only when absent. It then starts the application. Existing policy and identity changes, including revocation, are preserved on subsequent starts.
 
 ## Business configuration
 
@@ -112,10 +112,11 @@ export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 ```
 
-For recovery/restore and measured one/two-instance workloads, run the Python standard-library [operational harness](docs/OPERATIONS.md#operational-verification):
+Recovery/restore, legacy-image migration and measured one/two-instance workloads require Python 3.10+ (standard library only). Run the [operational harness](docs/OPERATIONS.md#operational-verification):
 
 ```sh
 python3 -B scripts/verify-operations.py --suite recovery
+python3 -B scripts/verify-operations.py --suite upgrade
 python3 -B scripts/verify-operations.py --suite capacity
 ```
 
@@ -126,6 +127,7 @@ These use separate disposable Docker resources and write ignored evidence under 
 | Read this | For |
 | --- | --- |
 | [Architecture](docs/ARCHITECTURE.md) | Boundaries, data correctness, security, scaling and failure trade-offs |
+| [Scaling](docs/SCALING.md) | How instances share work and state, tested limits and planned load balancing |
 | [Rules](docs/RULES.md) | Exact predicates, outcomes, configuration and rule extension |
 | [OpenAPI](api/openapi.yaml) | HTTP contract, schemas, errors and endpoint permissions |
 | [Testing](docs/TESTING.md) | Acceptance criteria, risk scenarios and required release evidence |

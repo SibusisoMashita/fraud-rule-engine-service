@@ -14,13 +14,15 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import za.co.sibusiso.fraud.TestDatabase;
+import za.co.sibusiso.fraud.TestImages;
 import static org.assertj.core.api.Assertions.*;
 
 /** Real database fixtures isolate receipt-window, watermark and index behaviour from HTTP. */
 @Testcontainers
 class HistoryStoreTest {
     @Container static final PostgreSQLContainer DATABASE=new PostgreSQLContainer(DockerImageName.parse(
-            "postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3").asCompatibleSubstituteFor("postgres"));
+            TestImages.POSTGRES).asCompatibleSubstituteFor("postgres"))
+            .withEnv("POSTGRES_INITDB_ARGS", TestImages.INITDB_ARGS);
     static JdbcTemplate jdbc;
     static JdbcTransactionStore store;
     static String policyHash;

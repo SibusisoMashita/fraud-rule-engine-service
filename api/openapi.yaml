@@ -343,6 +343,7 @@ components:
           maxLength: 64
         occurredAt:
           $ref: '#/components/schemas/Timestamp'
+          description: For a new event, replace the illustrative timestamp with the current event time within the active policy's allowed age. Identical retries reuse the original timestamp and payload.
         physicalLocation:
           $ref: '#/components/schemas/PhysicalLocation'
       required:
