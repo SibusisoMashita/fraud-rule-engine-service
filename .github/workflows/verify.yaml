@@ -3,6 +3,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      capacity:
+        description: Run the full measured capacity suite
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -11,7 +17,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -19,9 +25,43 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+      - name: Verify operational helpers
+        run: python3 -B -m unittest discover -s scripts/verification -p 'test_*.py'
       - name: Build and integration tests
         run: ./mvnw -B -ntp verify
       - name: Build application image
         run: docker compose build app
       - name: Verify Compose lifecycle
         run: ./scripts/smoke.sh
+      - name: Verify recovery and restore
+        run: python3 -B scripts/verify-operations.py --suite recovery
+      - name: Measure capacity
+        if: github.event_name == 'workflow_dispatch' && inputs.capacity
+        run: python3 -B scripts/verify-operations.py --suite capacity
+      - name: Retain operational evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: operational-evidence
+          path: target/operations/**/results.json
+          if-no-files-found: ignore
+          retention-days: 14
+  security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install checksum-verified scanner
+        run: |
+          mkdir -p target/tools
+          cd target/tools
+          curl --fail --location --retry 3 --remote-name https://github.com/aquasecurity/trivy/releases/download/v0.76.0/trivy_0.76.0_Linux-64bit.tar.gz
+          curl --fail --location --retry 3 --remote-name https://github.com/aquasecurity/trivy/releases/download/v0.76.0/trivy_0.76.0_checksums.txt
+          grep '  trivy_0.76.0_Linux-64bit.tar.gz$' trivy_0.76.0_checksums.txt | sha256sum --check --strict
+          tar -xzf trivy_0.76.0_Linux-64bit.tar.gz trivy
+      - name: Build application image
+        run: docker compose build app
+      - name: Scan source, dependencies, image and secrets
+        env:
+          TRIVY_BIN: ./target/tools/trivy
+        run: ./scripts/security-check.sh

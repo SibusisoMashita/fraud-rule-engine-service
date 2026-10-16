@@ -4,6 +4,8 @@ A Java backend for evaluating categorized transaction events, storing explainabl
 
 **Status:** the transactional flow and five rules are implemented: authenticated `POST /api/v1/transactions` evaluates high amount, transaction velocity, cumulative spend, impossible travel and a small-payment burst followed by a large payment and commits the event, evaluation and complete rule-result set together. Identical retries return the original result; `GET /api/v1/transactions/{eventId}` retrieves it within the caller's scope. Evaluation pages and active rule-policy inspection are available through protected GET endpoints.
 
+Operational recovery and the bounded one/two-instance workload have been verified locally. [Testing](docs/TESTING.md) records the measured limits and open release gates, including dependency-image security review.
+
 ## Scope
 
 V1 accepts immutable **BOOKED outgoing card purchases and ATM withdrawals** from authenticated producers. It flags potential fraud; it does not authorize payments, establish fraud, calculate balances, or process refunds/reversals. Producers supply a stable event identity, opaque customer/instrument identifiers and trustworthy physical-location evidence when available. The demonstration dataset is synthetic.
@@ -109,6 +111,15 @@ For Docker contexts using a non-default Unix socket, expose that context to Test
 export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 ```
+
+For recovery/restore and measured one/two-instance workloads, run the Python standard-library [operational harness](docs/OPERATIONS.md#operational-verification):
+
+```sh
+python3 -B scripts/verify-operations.py --suite recovery
+python3 -B scripts/verify-operations.py --suite capacity
+```
+
+These use separate disposable Docker resources and write ignored evidence under `target/operations/`. The full capacity suite takes approximately fifteen minutes, including seeding and warm-up. Run it on a quiet host. [Security verification](docs/OPERATIONS.md#security-verification) covers the pinned source/dependency/image scanner and release gate.
 
 ## Documentation
 

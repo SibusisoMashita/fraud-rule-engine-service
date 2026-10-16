@@ -1,0 +1,33 @@
+{
+  "startupTimeoutSeconds": 120,
+  "requestTimeoutSeconds": 12,
+  "recoveryTimeoutSeconds": 60,
+  "faultBoundSeconds": 10,
+  "blockerSeconds": 30,
+  "burstConcurrency": 32,
+  "principals": 4,
+  "seedEvents": 100000,
+  "customers": 10000,
+  "warmupSeconds": 15,
+  "durationSeconds": 300,
+  "auxiliaryDurationSeconds": 60,
+  "targetRequestsPerSecond": 20,
+  "hotCustomerRequestsPerSecond": 5,
+  "overloadRequestsPerSecond": 300,
+  "overloadSeconds": 10,
+  "maxInFlight": 64,
+  "maxGeneratorLagMillis": 50,
+  "readEvery": 5,
+  "sampleIntervalSeconds": 5,
+  "p95Millis": 300,
+  "p99Millis": 1000,
+  "maxUnexpectedErrorFraction": 0.001,
+  "applicationConnectionBudget": 30,
+  "rolloutSurge": 1,
+  "event": {
+    "transactionType": "CARD_PURCHASE", "status": "BOOKED", "channel": "CARD_PRESENT",
+    "amount": "1.00", "currency": "ZAR", "category": "SYNTHETIC",
+    "physicalLocation": {"latitude": -33.9249, "longitude": 18.4241, "accuracyKm": 0.1,
+      "source": "VERIFIED_CARD_PRESENT_TERMINAL", "city": "Cape Town"}
+  }
+}

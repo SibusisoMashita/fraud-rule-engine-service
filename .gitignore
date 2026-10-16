@@ -6,6 +6,7 @@
 
 # Build output
 /target/
+__pycache__/
 
 # Runtime secrets and local overrides (safe templates may be committed)
 .env

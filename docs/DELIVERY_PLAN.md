@@ -1,6 +1,6 @@
 # Delivery plan
 
-Stages 0–8 are implemented. Customer-locked evaluations include velocity, cumulative spend, trusted physical impossible travel and the small-payment sequence. Business thresholds, windows, evidence filters and rule toggles remain live database policy. Swagger UI serves the maintained contract. Protected evaluation pages and live active-policy inspection are available. The next stage covers operational verification and measured capacity.
+Stages 0–8 are implemented. Stage 9 adds verified Docker recovery/restore drills, measured one/two-instance, hot-customer and mixed workloads, bounded overload recovery, packaged dependency inventory and security checks. The specified local workload passed; application security findings were patched. Dependency-image security acceptance remains open before release. Stage 10 covers clean-clone release validation after the remaining gates in [Testing](TESTING.md) are satisfied.
 
 ## Milestones
 
