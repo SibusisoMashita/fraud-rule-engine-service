@@ -7,7 +7,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 
-from faults import CommitProxy
+from commit_fault import ContainerCommitProxy
 from stack import check
 
 
@@ -155,25 +155,31 @@ def run(stack, record):
     record('kill-during-write', {'invariants': invariant_counts(stack)})
 
     # Drop the real PostgreSQL commit reply, not a mocked Java exception.
-    host, port = stack.address('db', 5432).split(':')
-    proxy = CommitProxy((host, int(port)))
+    proxy = ContainerCommitProxy(stack)
     original_url = stack.config['services']['app']['environment']['DATABASE_URL']
     try:
         stack.config['services']['app']['environment']['DATABASE_URL'] = (
-            f'jdbc:postgresql://host.docker.internal:{proxy.port}/fraud?currentSchema=fraud&sslmode=disable&gssEncMode=disable')
+            'jdbc:postgresql://commit-proxy:5432/fraud?currentSchema=fraud&sslmode=disable&gssEncMode=disable')
         stack.save()
         stack.compose('up', '-d', '--no-build', '--no-deps', '--force-recreate', 'app')
         stack.ready()
         ambiguous = event(settings, 'lost-commit-reply')
-        proxy.armed.set()
+        proxy.arm()
         status, response, elapsed = stack.request('/api/v1/transactions', ambiguous)
-        check(proxy.dropped.is_set(), 'Commit fault did not fire')
+        check(proxy.status()['dropped'], 'Commit fault did not fire')
         check(status == 503 and json.loads(response)['outcome'] == 'UNKNOWN', 'Lost commit reply was not reported UNKNOWN')
         check(count_event(stack, ambiguous['eventId']) == 1, 'Lost acknowledgement did not follow a real commit')
         recovered, _ = post(stack, ambiguous, 200)
         check(json.loads(recovered)['evaluation']['policyHash'] == stack.sql('SELECT policy_hash FROM fraud.policy_head WHERE singleton'), 'Recovered wrong policy')
         record('lost-commit-acknowledgement', {'requestMillis': elapsed * 1000, 'outcome': 'UNKNOWN', 'replayStatus': 200,
+                                             'transport': 'compose-network', 'proxyImage': proxy.image,
                                              'invariants': invariant_counts(stack)})
+    except BaseException:
+        try:
+            (stack.output / 'commit-proxy-failure.log').write_text(stack.failure_logs())
+        except Exception:
+            pass
+        raise
     finally:
         stack.config['services']['app']['environment']['DATABASE_URL'] = original_url
         stack.save()

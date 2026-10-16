@@ -45,7 +45,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: operational-evidence
-          path: target/operations/**/results.json
+          path: |
+            target/operations/**/results.json
+            target/operations/**/*failure.log
           if-no-files-found: ignore
           retention-days: 14
   security:

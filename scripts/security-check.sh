@@ -42,5 +42,9 @@ for service in db redis; do
     "$scanner" --quiet image --pkg-types os --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 \
         --format json --output "target/security/$service.json" "$reference" || result=1
 done
+# The operational fault sidecar is test-only but must pass the same severity gate.
+proxy_image=$(python3 -B -c 'import sys; sys.path.insert(0,"scripts/verification"); from commit_fault import build_image; print(build_image())')
+"$scanner" --quiet image --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 \
+    --format json --output target/security/commit-proxy.json "$proxy_image" || result=1
 "$scanner" --version >> target/security/scanner.txt
 exit "$result"

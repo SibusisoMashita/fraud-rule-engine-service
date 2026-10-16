@@ -51,7 +51,6 @@ class Stack:
             value['file'] = str(path)
         self.config['services']['app']['ports'] = [self.port_definition(8080)]
         self.config['services']['db']['ports'] = [self.port_definition(5432)]
-        self.config['services']['app']['extra_hosts'] = ['host.docker.internal:host-gateway']
         self.config['services']['peer'] = copy.deepcopy(self.config['services']['app'])
         self.config['services']['peer']['profiles'] = ['peer']
         self.config['services']['restore-db'] = copy.deepcopy(self.config['services']['db'])
@@ -117,11 +116,13 @@ class Stack:
     def ready(self, service='app'):
         self.base_cached[service] = self.base(service)
         deadline = time.monotonic() + self.settings['startupTimeoutSeconds']
+        last_status = None
         while time.monotonic() < deadline:
-            if self.request('/health/ready', service=service, authenticated=False)[0] == 200:
+            last_status = self.request('/health/ready', service=service, authenticated=False)[0]
+            if last_status == 200:
                 return
             time.sleep(.25)
-        raise AssertionError(service + ' did not become ready')
+        raise AssertionError(f'{service} did not become ready (last HTTP status: {last_status})')
 
     def start(self):
         self.base_cached = {}
@@ -168,6 +169,16 @@ class Stack:
                 'policyHash': self.sql('SELECT policy_hash FROM fraud.policy_head WHERE singleton'),
                 'configurationHashes': {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
                                         for name in ('config/service.example.yaml', 'config/policy.example.yaml', 'config/verification.example.json')}}
+
+    def failure_logs(self):
+        logs = self.compose('logs', '--no-color', '--tail', '150').decode(errors='replace')
+        secrets_to_remove = [path.read_text().strip() for path in self.credentials.iterdir()]
+        secrets_to_remove += self.keys
+        secrets_to_remove += [value.split('.', 1)[1] for value in secrets_to_remove if '.' in value]
+        for secret in sorted(set(secrets_to_remove), key=len, reverse=True):
+            if secret:
+                logs = logs.replace(secret, '[REDACTED]')
+        return logs
 
     def close(self):
         if self.closed:

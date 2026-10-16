@@ -1,4 +1,8 @@
 """Local, disposable PostgreSQL wire fault. No SQL, credentials or payloads are logged."""
+import argparse
+import json
+from pathlib import Path
+import signal
 import socket
 import struct
 import threading
@@ -21,15 +25,15 @@ class CommitProxy:
     through untouched; backend messages use PostgreSQL's type + int32 framing.
     https://www.postgresql.org/docs/17/protocol-message-formats.html
     """
-    def __init__(self, upstream):
+    def __init__(self, upstream, listen=('127.0.0.1', 0), armed=None, dropped=None):
         self.upstream = upstream
-        self.armed = threading.Event()
-        self.dropped = threading.Event()
+        self.armed = armed if armed is not None else threading.Event()
+        self.dropped = dropped if dropped is not None else threading.Event()
         self.closed = threading.Event()
         self.connections = set()
         self.lock = threading.Lock()
         self.listener = socket.socket()
-        self.listener.bind(('0.0.0.0', 0))
+        self.listener.bind(listen)
         self.listener.listen()
         self.listener.settimeout(0.2)
         self.port = self.listener.getsockname()[1]
@@ -89,10 +93,12 @@ class CommitProxy:
                 if not 4 <= size <= 16 * 1024 * 1024:
                     raise EOFError()
                 payload = receive(server, size - 4)
-                if kind == b'C' and payload == b'COMMIT\0' and self.armed.is_set():
-                    self.armed.clear()
-                    self.dropped.set()
-                    return
+                if kind == b'C' and payload == b'COMMIT\0':
+                    with self.lock:
+                        if self.armed.is_set():
+                            self.armed.clear()
+                            self.dropped.set()
+                            return
                 client.sendall(kind + length + payload)
         except (OSError, EOFError):
             pass
@@ -105,3 +111,52 @@ class CommitProxy:
         with self.lock:
             sockets = list(self.connections)
         self._dispose(*sockets)
+
+
+class FileFlag:
+    """Small process-shared flags in the sidecar's private tmpfs; never payloads."""
+    def __init__(self, path):
+        self.path = Path(path)
+
+    def is_set(self):
+        return self.path.exists()
+
+    def set(self):
+        self.path.touch()
+
+    def clear(self):
+        self.path.unlink(missing_ok=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('serve', 'ready', 'arm', 'status'))
+    parser.add_argument('--upstream', default='db')
+    args = parser.parse_args()
+    flags = {name: FileFlag('/tmp/commit-fault-' + name) for name in ('ready', 'armed', 'dropped')}
+    if args.action == 'serve':
+        for flag in flags.values():
+            flag.clear()
+        proxy = CommitProxy((args.upstream, 5432), listen=('0.0.0.0', 5432),
+                            armed=flags['armed'], dropped=flags['dropped'])
+        signal.signal(signal.SIGTERM, lambda *_: proxy.closed.set())
+        signal.signal(signal.SIGINT, lambda *_: proxy.closed.set())
+        flags['ready'].set()
+        try:
+            proxy.closed.wait()
+        finally:
+            flags['ready'].clear()
+            proxy.close()
+    elif args.action == 'ready':
+        if not flags['ready'].is_set():
+            raise SystemExit(1)
+    elif args.action == 'arm':
+        if not flags['ready'].is_set() or flags['dropped'].is_set():
+            raise SystemExit('Proxy is unavailable or its one-shot fault was already used')
+        flags['armed'].set()
+    else:
+        print(json.dumps({name: flag.is_set() for name, flag in flags.items()}))
+
+
+if __name__ == '__main__':
+    main()

@@ -71,9 +71,9 @@ def main():
     except BaseException as failure:
         report['failure'] = {'type': type(failure).__name__, 'message': str(failure)}
         if stack:
-            # App logs have no request bodies or credential values; still kept ignored/local.
+            # Only disposable synthetic fixtures are logged; redact generated credentials.
             try:
-                (output / 'failure.log').write_bytes(stack.compose('logs', '--no-color', '--tail', '150'))
+                (output / 'failure.log').write_text(stack.failure_logs())
             except Exception:
                 pass
         raise

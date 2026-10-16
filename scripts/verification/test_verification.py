@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from faults import CommitProxy, receive
-from stack import ROOT, command
+from stack import ROOT, Stack, command
 from subprocess import CompletedProcess
 from load import accepted, percentile, run, summarize, within_error_budget
 
@@ -103,6 +103,51 @@ class WireFaultTest(unittest.TestCase):
         self.assertFalse(errors)
         self.assertFalse(worker.is_alive())
 
+    def test_one_armed_fault_drops_exactly_one_of_two_concurrent_commits(self):
+        listener = socket.socket()
+        listener.bind(('127.0.0.1', 0))
+        listener.listen()
+        listener.settimeout(3)
+        proxy = CommitProxy(listener.getsockname())
+        barrier = threading.Barrier(3)
+        errors, responses = [], []
+        frame = b'C' + struct.pack('!I', 11) + b'COMMIT\0'
+
+        def backend():
+            try:
+                with listener.accept()[0] as connection:
+                    barrier.wait(3)
+                    connection.sendall(frame)
+                    connection.recv(1)
+            except Exception as failure:
+                errors.append(type(failure).__name__)
+
+        workers = [threading.Thread(target=backend) for _ in range(2)]
+        clients = []
+        try:
+            for worker in workers:
+                worker.start()
+            clients = [socket.create_connection(('127.0.0.1', proxy.port), timeout=3) for _ in range(2)]
+            proxy.armed.set()
+            barrier.wait(3)
+            for client in clients:
+                response = client.recv(len(frame))
+                if response:
+                    response += receive(client, len(frame) - len(response))
+                responses.append(response)
+            self.assertEqual(sorted(responses), [b'', frame])
+            self.assertTrue(proxy.dropped.is_set())
+            self.assertFalse(proxy.armed.is_set())
+        finally:
+            proxy.close()
+            listener.close()
+            for client in clients:
+                client.close()
+            for worker in workers:
+                worker.join(4)
+        self.assertFalse(errors)
+        self.assertTrue(all(not worker.is_alive() for worker in workers))
+
 
 class DatabaseGuardTest(unittest.TestCase):
     def test_nonempty_partial_and_wrong_family_directories_are_rejected_before_startup(self):
@@ -132,6 +177,25 @@ class DiagnosticTest(unittest.TestCase):
                 command(['docker', 'compose'], data=secret.encode())
         self.assertNotIn(secret, str(caught.exception))
         self.assertIn('diagnostics withheld', str(caught.exception))
+
+    def test_retained_failure_logs_redact_credentials_and_key_secret_components(self):
+        with tempfile.TemporaryDirectory() as folder:
+            private = Path(folder)
+            (private / 'db-password').write_text('database-secret-value\n')
+            (private / 'empty').write_text('')
+            (private / 'local-api-key').write_text('local.demo-secret-value\n')
+            stack = Stack.__new__(Stack)
+            stack.credentials = private
+            stack.keys = ['ops-0.api-secret-value']
+            stack.compose = lambda *_: (b'Connection refused; database-secret-value; '
+                                       b'ops-0.api-secret-value; api-secret-value; '
+                                       b'local.demo-secret-value; demo-secret-value')
+            logs = stack.failure_logs()
+            self.assertIn('Connection refused', logs)
+            self.assertNotIn('database-secret-value', logs)
+            self.assertNotIn('api-secret-value', logs)
+            self.assertNotIn('demo-secret-value', logs)
+            self.assertEqual(logs.count('[REDACTED]'), 5)
 
 
 class InventoryTest(unittest.TestCase):
