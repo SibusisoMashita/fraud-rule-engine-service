@@ -127,7 +127,7 @@ def run(stack, record):
     profile('hot-customer', 2, settings['hotCustomerRequestsPerSecond'], settings['auxiliaryDurationSeconds'], hot=True)
     profile('read-write-mix', 2, settings['targetRequestsPerSecond'], settings['auxiliaryDurationSeconds'], mixed=True)
     overload, completed_at = profile('overload', 2, settings['overloadRequestsPerSecond'], settings['overloadSeconds'], enforce=False)
-    # Include overload drain and all subsequent sampling/invariant/report overhead.
+    # Measure from the end of overload arrivals, including outstanding response drain.
     began = completed_at - overload['drainSeconds']
     # Recover without resetting quota state, restarting or discarding pending work.
     recovered = False

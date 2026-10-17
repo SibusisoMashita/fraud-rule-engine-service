@@ -1,5 +1,6 @@
 package za.co.sibusiso.fraud;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.*;
 import java.time.*;
@@ -25,6 +26,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import za.co.sibusiso.fraud.configuration.*;
 import za.co.sibusiso.fraud.evaluation.*;
 import za.co.sibusiso.fraud.ingress.security.Caller;
@@ -87,6 +89,84 @@ class EvaluationQueryTest {
             assertThat(response.headers().firstValue("Cache-Control")).contains("no-store");assertThat(response.headers().firstValue("set-cookie")).isEmpty();
         }while(cursor!=null);
         assertThat(ids).hasSize(7).doesNotHaveDuplicates().isSorted();
+    }
+    @Test
+    void paginatedEvaluationsPreserveExactDecimalsFromTheOriginalResponse() throws Exception {
+        var who = identity();
+        Instant time = Instant.now().truncatedTo(ChronoUnit.MICROS);
+        clock(time.minusSeconds(1));
+        database("fraud_security_admin")
+                .update(
+                        "UPDATE fraud.api_principals SET location_sources=ARRAY['VERIFIED_CARD_PRESENT_TERMINAL']::text[] WHERE scope=?",
+                        who.scope());
+        var referenceAccuracy = new BigDecimal("0.98765432109876543210987654321");
+        var currentAccuracy = new BigDecimal("0.12345678901234567890123456789");
+        var latitude = new BigDecimal("-26.204100000000000000000000001");
+        var longitude = new BigDecimal("28.047300000000000000000000001");
+        var reference =
+                (ObjectNode)
+                        json.readTree(
+                                body(
+                                        "precise-reference",
+                                        "customer",
+                                        "card",
+                                        "1.00",
+                                        time.minusSeconds(600)));
+        reference.put("channel", "CARD_PRESENT");
+        reference.set(
+                "physicalLocation",
+                json.valueToTree(
+                        Map.of(
+                                "latitude",
+                                new BigDecimal("-33.9249"),
+                                "longitude",
+                                new BigDecimal("18.4241"),
+                                "accuracyKm",
+                                referenceAccuracy,
+                                "source",
+                                "VERIFIED_CARD_PRESENT_TERMINAL")));
+        var first = post(who, json.writeValueAsString(reference));
+        assertThat(first.statusCode()).as(first.body()).isEqualTo(201);
+        clock(time);
+        var current =
+                (ObjectNode)
+                        json.readTree(body("precise-current", "customer", "card", "1.00", time));
+        current.put("channel", "CARD_PRESENT");
+        current.set(
+                "physicalLocation",
+                json.valueToTree(
+                        Map.of(
+                                "latitude",
+                                latitude,
+                                "longitude",
+                                longitude,
+                                "accuracyKm",
+                                currentAccuracy,
+                                "source",
+                                "VERIFIED_CARD_PRESENT_TERMINAL")));
+        var submitted = post(who, json.writeValueAsString(current));
+        assertThat(submitted.statusCode()).as(submitted.body()).isEqualTo(201);
+        var retrieved = get(who, "/api/v1/transactions/precise-current");
+        assertThat(retrieved.statusCode()).as(retrieved.body()).isEqualTo(200);
+        for (String document : List.of(submitted.body(), retrieved.body())) {
+            assertThat(numberTokens(document, "latitude")).containsExactly(latitude);
+            assertThat(numberTokens(document, "longitude")).containsExactly(longitude);
+            assertThat(numberTokens(document, "currentAccuracyKm"))
+                    .containsExactly(currentAccuracy);
+            assertThat(numberTokens(document, "referenceAccuracyKm"))
+                    .containsExactly(referenceAccuracy);
+        }
+        var parameters = range(time.minusSeconds(2), time.plusSeconds(1), 1);
+        var firstPage = page(who, parameters);
+        assertThat(eventIds(firstPage)).containsExactly("precise-reference");
+        parameters.put("cursor", json.readTree(firstPage.body()).get("nextCursor").asString());
+        var nextPage = page(who, parameters);
+        assertThat(eventIds(nextPage)).containsExactly("precise-current");
+        assertThat(numberTokens(nextPage.body(), "currentAccuracyKm"))
+                .containsExactly(currentAccuracy);
+        assertThat(numberTokens(nextPage.body(), "referenceAccuracyKm"))
+                .containsExactly(referenceAccuracy);
+        assertThat(json.readTree(nextPage.body()).has("nextCursor")).isFalse();
     }
     @Test void halfOpenDatesFiltersAndScopeIsolationApplyBeforePaging() throws Exception {
         var who=identity();var other=identity();Instant time=Instant.now().minusSeconds(10).truncatedTo(ChronoUnit.MICROS);
@@ -207,6 +287,18 @@ class EvaluationQueryTest {
         database("fraud_policy_admin").queryForObject("SELECT fraud.activate_policy(?,?,false)",String.class,"0".repeat(64),"schemaVersion: 999");
         assertThat(get(who,"/api/v1/rules").statusCode()).isEqualTo(503);activate(original);
         assertThat(json.readTree(get(who,"/api/v1/rules").body()).get("policyHash").asString()).isEqualTo(previous);
+    }
+    private List<BigDecimal> numberTokens(String document, String property) {
+        var numbers = new ArrayList<BigDecimal>();
+        // Read numeric tokens directly: a floating-point tree parser could hide the same rounding
+        // on both endpoints.
+        try (var parser = json.tokenStreamFactory().createParser(document)) {
+            while (parser.nextToken() != null) {
+                if (parser.currentToken().isNumeric() && property.equals(parser.currentName()))
+                    numbers.add(new BigDecimal(parser.getString()));
+            }
+        }
+        return numbers;
     }
     private void clock(Instant value){doReturn(value).when(store).databaseTime();doReturn(value).when(queryStore).now();}
     private void create(Identity who,String id,String customer,String amount,Instant occurred) throws Exception {

@@ -16,12 +16,24 @@ public final class FlowFailure extends RuntimeException {
         this(status, code.name(), unknown);
     }
 
+    public FlowFailure(HttpStatus status, ErrorCode code, Throwable cause) {
+        this(status, code, false, cause);
+    }
+
+    public FlowFailure(HttpStatus status, ErrorCode code, boolean unknown, Throwable cause) {
+        this(status, code.name(), unknown, cause);
+    }
+
     public FlowFailure(HttpStatus status, String code) {
         this(status, code, false);
     }
 
     public FlowFailure(HttpStatus status, String code, boolean unknown) {
-        super(code);
+        this(status, code, unknown, null);
+    }
+
+    private FlowFailure(HttpStatus status, String code, boolean unknown, Throwable cause) {
+        super(code, cause);
         this.status = status;
         this.code = code;
         this.unknown = unknown;

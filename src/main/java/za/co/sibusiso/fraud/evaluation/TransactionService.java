@@ -48,7 +48,10 @@ public class TransactionService {
         } catch (DuplicateKeyException race) {
             if (attempt.isCommitReady())
                 throw new FlowFailure(
-                        HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.COMMIT_OUTCOME_UNKNOWN, true);
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        ErrorCode.COMMIT_OUTCOME_UNKNOWN,
+                        true,
+                        race);
             try {
                 check(remaining);
                 var winner = store.find(caller.scope(), event.eventId());
@@ -56,26 +59,33 @@ public class TransactionService {
                     return new EvaluationWriter.Submission(
                             false, compare(winner.orElseThrow(), hash));
                 throw new FlowFailure(
-                        HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.CONCURRENT_WRITE_RETRY);
+                        HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.CONCURRENT_WRITE_RETRY, race);
             } catch (DataAccessException unavailable) {
                 throw new FlowFailure(
-                        HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.DEPENDENCY_UNAVAILABLE);
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        ErrorCode.DEPENDENCY_UNAVAILABLE,
+                        unavailable);
             }
         } catch (Exception failure) {
             if (attempt.isCommitReady())
                 throw new FlowFailure(
-                        HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.COMMIT_OUTCOME_UNKNOWN, true);
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        ErrorCode.COMMIT_OUTCOME_UNKNOWN,
+                        true,
+                        failure);
             if (failure instanceof TransactionSystemException)
                 throw new FlowFailure(
                         HttpStatus.SERVICE_UNAVAILABLE,
                         ErrorCode.TRANSACTION_OUTCOME_UNKNOWN,
-                        true);
+                        true,
+                        failure);
             if (failure instanceof DataAccessException
                     || failure instanceof TransactionException
                     || failure instanceof PolicyUnavailableException)
                 throw new FlowFailure(
-                        HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.DEPENDENCY_UNAVAILABLE);
-            throw new FlowFailure(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.EVALUATION_FAILED);
+                        HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.DEPENDENCY_UNAVAILABLE, failure);
+            throw new FlowFailure(
+                    HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.EVALUATION_FAILED, failure);
         }
     }
 
@@ -94,7 +104,8 @@ public class TransactionService {
             check(remaining);
             return result;
         } catch (DataAccessException unavailable) {
-            throw new FlowFailure(HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.DEPENDENCY_UNAVAILABLE);
+            throw new FlowFailure(
+                    HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.DEPENDENCY_UNAVAILABLE, unavailable);
         }
     }
 

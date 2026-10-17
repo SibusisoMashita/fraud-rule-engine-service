@@ -138,6 +138,8 @@ A successful POST includes the captured policy hash, application artifact identi
 
 Rule failures and work-budget expiry before commit roll back all records. Completion failures can be ambiguous even when the server later proves rollback, so the API conservatively returns `UNKNOWN` where commit/cleanup cannot be confirmed. Transport loss after commit can hide a successful response. Retry the identical event, never a replacement ID. Original decisions and provenance remain retrievable after restart or subsequent policy changes. The operational harness below covers controlled process, acknowledgement-loss and logical-restore drills; production recovery qualification remains deployment-specific.
 
+For server errors, find the response’s `X-Correlation-ID` in the `request_failure` application log, visible in `docker compose logs app`. It connects the error code, HTTP status and acceptance outcome to bounded exception types and code locations. Exception messages, request data and credentials are omitted.
+
 ## Query access and cursor keys
 
 Use the generated local key to list evaluations or inspect the current policy:

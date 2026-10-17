@@ -9,8 +9,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import za.co.sibusiso.fraud.contracts.ErrorCode;
 import za.co.sibusiso.fraud.evaluation.FlowFailure;
-import za.co.sibusiso.fraud.ingress.error.ApiFailure.Outcome;
 import za.co.sibusiso.fraud.ingress.error.ApiFailure;
+import za.co.sibusiso.fraud.ingress.error.ApiFailure.Outcome;
 import za.co.sibusiso.fraud.ingress.error.ApiProblems;
 
 @RestControllerAdvice(assignableTypes = IngressController.class)
@@ -23,54 +23,74 @@ public final class IngressAdvice {
                 failure.status() == HttpStatus.SERVICE_UNAVAILABLE
                         ? ApiFailure.DEFAULT_RETRY_AFTER_SECONDS
                         : 0;
-        ApiProblems.write(
+        respond(
                 request,
                 response,
                 new ApiFailure(
                         failure.status(),
                         failure.code(),
                         retryAfterSeconds,
-                        failure.unknown() ? Outcome.UNKNOWN : Outcome.NOT_ACCEPTED));
+                        failure.unknown() ? Outcome.UNKNOWN : Outcome.NOT_ACCEPTED,
+                        failure));
     }
 
     @ExceptionHandler(Exception.class)
-    public void unexpected(HttpServletRequest request, HttpServletResponse response)
+    public void unexpected(
+            Exception failure, HttpServletRequest request, HttpServletResponse response)
             throws IOException {
-        if (!response.isCommitted()) {
-            ApiProblems.write(
-                    request,
-                    response,
-                    new ApiFailure(
-                            HttpStatus.INTERNAL_SERVER_ERROR,
-                            ErrorCode.INTERNAL_ERROR,
-                            0,
-                            financialOutcome(request)));
-        }
+        respond(
+                request,
+                response,
+                new ApiFailure(
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        ErrorCode.INTERNAL_ERROR,
+                        0,
+                        financialOutcome(request),
+                        failure));
     }
 
     @ExceptionHandler(ApiFailure.class)
     public void rejected(
             ApiFailure failure, HttpServletRequest request, HttpServletResponse response)
             throws IOException {
-        ApiProblems.write(request, response, failure);
+        respond(request, response, failure);
     }
 
     @ExceptionHandler(IOException.class)
-    public void unreadable(HttpServletRequest request, HttpServletResponse response)
+    public void unreadable(
+            IOException failure, HttpServletRequest request, HttpServletResponse response)
             throws IOException {
-        if (response.isCommitted()) return;
-        if (financialOutcome(request) == Outcome.UNKNOWN) {
-            ApiProblems.write(
+        Outcome outcome = financialOutcome(request);
+        if (response.isCommitted() || outcome == Outcome.UNKNOWN) {
+            respond(
                     request,
                     response,
                     new ApiFailure(
-                            HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.RESPONSE_OUTCOME_UNKNOWN,
-                            ApiFailure.DEFAULT_RETRY_AFTER_SECONDS, Outcome.UNKNOWN));
+                            HttpStatus.SERVICE_UNAVAILABLE,
+                            ErrorCode.RESPONSE_OUTCOME_UNKNOWN,
+                            ApiFailure.DEFAULT_RETRY_AFTER_SECONDS,
+                            outcome,
+                            failure));
         } else {
-            ApiProblems.write(
+            respond(
                     request,
                     response,
-                    new ApiFailure(HttpStatus.BAD_REQUEST, ErrorCode.UNREADABLE_BODY));
+                    new ApiFailure(
+                            HttpStatus.BAD_REQUEST,
+                            ErrorCode.UNREADABLE_BODY,
+                            0,
+                            Outcome.NOT_ACCEPTED,
+                            failure));
+        }
+    }
+
+    private static void respond(
+            HttpServletRequest request, HttpServletResponse response, ApiFailure failure)
+            throws IOException {
+        if (response.isCommitted()) {
+            ApiProblems.logFailure(request, response, failure);
+        } else {
+            ApiProblems.write(request, response, failure);
         }
     }
 

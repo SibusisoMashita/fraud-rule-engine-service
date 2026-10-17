@@ -51,7 +51,8 @@ public final class SharedRateLimiter {
             throw new ApiFailure(
                     HttpStatus.SERVICE_UNAVAILABLE,
                     ErrorCode.LIMITER_UNAVAILABLE,
-                    ApiFailure.DEFAULT_RETRY_AFTER_SECONDS);
+                    ApiFailure.DEFAULT_RETRY_AFTER_SECONDS,
+                    unavailable);
         }
         if (result == null
                 || result.size() != 2

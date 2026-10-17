@@ -17,9 +17,9 @@ import static org.mockito.Mockito.*;
 class IngressFlowBoundaryTest {
     @Test void responseWriteFailureAfterFinancialWorkCannotBeReportedAsInvalidUnacceptedInput() throws Exception {
         var advice=new IngressAdvice();var request=new MockHttpServletRequest();var before=new MockHttpServletResponse();
-        advice.unreadable(request,before);assertThat(before.getStatus()).isEqualTo(400);assertThat(before.getContentAsString()).contains("NOT_ACCEPTED");
+        advice.unreadable(new java.io.IOException("read failed"),request,before);assertThat(before.getStatus()).isEqualTo(400);assertThat(before.getContentAsString()).contains("NOT_ACCEPTED");
         request.setAttribute(IngressController.FINANCIAL_RESPONSE,true);var after=new MockHttpServletResponse();
-        advice.unreadable(request,after);assertThat(after.getStatus()).isEqualTo(503);assertThat(after.getContentAsString()).contains("UNKNOWN").doesNotContain("NOT_ACCEPTED");
+        advice.unreadable(new java.io.IOException("write failed"),request,after);assertThat(after.getStatus()).isEqualTo(503);assertThat(after.getContentAsString()).contains("UNKNOWN").doesNotContain("NOT_ACCEPTED");
     }
     @Test void tightenedIdentifierConfigurationAppliesToReadsBeforeAnyLookup() {
         var yaml=new StrictYaml();var limits=yaml.read(yaml.readText(new ClassPathResource("config/service.example.yaml"))

@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.contracts.CanonicalJson;
@@ -25,7 +26,8 @@ public class EvaluationQueryReader {
     private final EvaluationCursor cursors;
     private final ActivePolicyProvider policies;
     private final ServiceLimits limits;
-    private final JsonMapper json = JsonMapper.builder().build();
+    private final JsonMapper json =
+            JsonMapper.builder().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).build();
 
     public EvaluationQueryReader(
             EvaluationQueryStore store,

@@ -40,7 +40,7 @@ Start the service using the [quickstart](../README.md#quickstart), then import t
 - [Fraud Rule Engine collection](../api/postman/fraud-rule-engine.postman_collection.json)
 - [Local environment](../api/postman/local.postman_environment.json)
 
-Select **Fraud — Local** as the environment. Set `baseUrl` to your API address: `http://localhost:8080` for the quickstart, or `http://localhost:8081` for the local IntelliJ Compose configuration. Set `apiKey` to the value from `secrets/local-api-key` using its **local value**. Keep the key unshared; masking a value does not make it safe to publish. You can also use a [Postman Local Vault](https://learning.postman.com/docs/sending-requests/postman-vault/postman-vault-secrets/) reference instead.
+Select **Fraud — Local** as the environment. Set `baseUrl` to your API address: `http://localhost:8080` for the quickstart, or the app port published by your Compose configuration. Set `apiKey` to the value from `secrets/local-api-key` using its **local value**. Keep the key unshared; masking a value does not make it safe to publish. You can also use a [Postman Local Vault](https://learning.postman.com/docs/sending-requests/postman-vault/postman-vault-secrets/) reference instead.
 
 Choose **Run collection**, use a **local functional run**, keep the requests in their saved order, and run one iteration. The collection checks health, active policy, transaction creation, exact replay, retrieval, filtered pagination and safe error responses. Each run creates two synthetic events with fresh IDs; they remain in the database. No policy settings are changed.
 
@@ -106,7 +106,7 @@ Rule tests include below/equal/above thresholds and exact window boundaries. Agg
 
 The target is **20 ingest requests/second for five minutes on each of one and two instances**, with four authorized principals, all five rules enabled, 100,000 seeded events and 10,000 customers. Each main run has a 15-second warm-up. Separate one-minute runs cover a hot customer at 5/second and mixed traffic at 20/second, with every fifth request a read. A ten-second 300/second overload is followed by recovery. Settings live in [verification configuration](../config/verification.example.json).
 
-A target run passes with p95 <300 ms, p99 <1 second, unexpected errors <0.1%, no dropped or denied arrivals, and no broken financial invariants. After overload, a successful target-rate window must finish within 60 seconds, including response drain and verification overhead, without a restart or quota reset. Unexpected HTTP/transport errors remain within budget during overload too.
+A target run passes with p95 <300 ms, p99 <1 second, unexpected errors <0.1%, no dropped or denied arrivals, and no broken financial invariants. After overload, a successful target-rate window must complete its HTTP requests within 60 seconds of the end of overload arrivals, without a restart or quota reset. This includes outstanding response drain and intervening work; checks and report writing after that window's HTTP completion are excluded. Unexpected HTTP/transport errors remain within budget during overload too.
 
 Reports record the hardware, versions, resource limits, policy, quotas, connection budget, seed, arrival model, warm-up, retries and duration. They separate offered, sent, dropped, denied and completed traffic and include latency, locks/pools, query plans and memory. The generator bounds concurrency and overload duration. A failed financial invariant ends the run; sampled memory growth requires review.
 
@@ -121,7 +121,7 @@ On 2026-10-16, the local benchmark ran on Docker Desktop 29.8.2/aarch64 with ten
 | One hot customer across two instances | 5/s, 60 seconds | 300 | 40.9 / 66.8 ms | 0 / 0 |
 | Mixed reads/writes across two instances | 20/s, 60 seconds | 1,200 | 20.4 / 24.1 ms | 0 / 0 |
 
-Every main, hot-customer and mixed request succeeded, and all checked financial invariants passed. The overload offered 3,000 arrivals: 2,927 were sent, 316 committed, 2,611 received 429 and the bounded generator dropped 73. A full 15-second target window then passed without drops or denials, finishing about 18.8 seconds after overload arrivals ended. There were no unexpected HTTP/transport errors, restarts or quota resets. The final 114,483 evaluations and 572,415 results had no orphan, sequence, watermark or navigation mismatch.
+Every main, hot-customer and mixed request succeeded, and all checked financial invariants passed. The overload offered 3,000 arrivals: 2,927 were sent, 316 committed, 2,611 received 429 and the bounded generator dropped 73. A full 15-second target window then passed without drops or denials; its HTTP responses completed about 18.8 seconds after overload arrivals ended. There were no unexpected HTTP/transport errors, restarts or quota resets. The final 114,483 evaluations and 572,415 results had no orphan, sequence, watermark or navigation mismatch.
 
 These figures apply to this workload and environment. They do not establish maximum throughput, long-term retention, larger history distributions, thousand-per-second capacity or production SLOs. In particular, 300/second was an overload test, not a supported throughput claim. The harness saves the full manifest and resource samples under `target/operations/`.
 
@@ -133,9 +133,9 @@ CI keeps operational/scaling results and bounded failure logs, with generated te
 
 ## Release checks
 
-The published `eedc457` passed [Linux GitHub Actions](https://github.com/SibusisoMashita/fraud-rule-engine-service/actions/runs/38949782146) on 2026-10-16: 320 Java tests, 16 helper tests, Docker build and lifecycle, load balancing and automatic scaling, recovery/restore, legacy migration and the full security gate. The optional capacity benchmark was skipped for that push; the measured local benchmark above is separate evidence.
+The reviewed `83ae32d` passed [Linux GitHub Actions](https://github.com/SibusisoMashita/fraud-rule-engine-service/actions/runs/38978548576) on 2026-10-17: 321 Java tests, 16 helper tests, Docker build and lifecycle, load balancing and automatic scaling, recovery/restore, legacy migration and the full security gate. The optional capacity benchmark was skipped for that push; the measured local benchmark above is separate evidence.
 
-The final local review on 2026-10-16 passed 321 Java tests and 16 helper tests, Docker build and lifecycle, extended HAProxy/automatic-scaling checks, recovery, legacy migration, the full security gate and the standard benchmark above.
+The local review on 2026-10-16 passed 321 Java tests and 16 helper tests, Docker build and lifecycle, extended HAProxy/automatic-scaling checks, recovery, legacy migration, the full security gate and the standard benchmark above.
 
 A fresh public clone at `eedc457`, with the review's documentation and regression-test changes applied, built and started without copying existing secrets or build output. It passed the README create/replay/query workflow, Swagger, live policy activation without replacing the app container, and stop/start persistence. The Postman collection passed two iterations: 34 requests and 170 assertions. Java tests ran in the main review checkout; the clean clone separately verified Docker startup and API behaviour.
 

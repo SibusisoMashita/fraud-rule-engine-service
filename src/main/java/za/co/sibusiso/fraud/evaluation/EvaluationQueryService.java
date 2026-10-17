@@ -37,7 +37,8 @@ public final class EvaluationQueryService {
         } catch (DataAccessException
                 | TransactionException
                 | PolicyUnavailableException unavailable) {
-            throw new FlowFailure(HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.DEPENDENCY_UNAVAILABLE);
+            throw new FlowFailure(
+                    HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.DEPENDENCY_UNAVAILABLE, unavailable);
         }
     }
 

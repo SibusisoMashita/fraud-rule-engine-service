@@ -28,8 +28,30 @@ public final class ApiFailure extends RuntimeException {
         this(status, code.name(), retryAfterSeconds, outcome);
     }
 
+    public ApiFailure(HttpStatus status, ErrorCode code, long retryAfterSeconds, Throwable cause) {
+        this(status, code.name(), retryAfterSeconds, Outcome.NOT_ACCEPTED, cause);
+    }
+
+    public ApiFailure(
+            HttpStatus status,
+            ErrorCode code,
+            long retryAfterSeconds,
+            Outcome outcome,
+            Throwable cause) {
+        this(status, code.name(), retryAfterSeconds, outcome, cause);
+    }
+
     public ApiFailure(HttpStatus status, String code, long retryAfterSeconds, Outcome outcome) {
-        super(code);
+        this(status, code, retryAfterSeconds, outcome, null);
+    }
+
+    public ApiFailure(
+            HttpStatus status,
+            String code,
+            long retryAfterSeconds,
+            Outcome outcome,
+            Throwable cause) {
+        super(code, cause);
         this.status = status;
         this.code = code;
         this.retryAfterSeconds = retryAfterSeconds;

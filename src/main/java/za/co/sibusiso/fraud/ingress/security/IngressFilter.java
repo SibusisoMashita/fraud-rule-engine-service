@@ -87,7 +87,8 @@ public final class IngressFilter extends OncePerRequestFilter {
                         new ApiFailure(
                                 HttpStatus.SERVICE_UNAVAILABLE,
                                 ErrorCode.DEPENDENCY_UNAVAILABLE,
-                                ApiFailure.DEFAULT_RETRY_AFTER_SECONDS));
+                                ApiFailure.DEFAULT_RETRY_AFTER_SECONDS,
+                                dependencyFailure));
                 return;
             }
             chain.doFilter(request, response);

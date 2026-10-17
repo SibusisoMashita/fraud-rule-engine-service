@@ -51,7 +51,7 @@ Policy inspection uses the same live provider as ingestion. It returns one captu
 
 ## Data ownership and representation
 
-Producers own categories, economic debit identity and physical-evidence provenance. Producers sharing a scope need collision-free event IDs. Only `BOOKED` outgoing debit observations enter history. Authorization/capture updates, incoming credits, refunds and reversals are rejected. A later reversal does not erase the original observed debit; this service does not maintain a settlement or net-spend ledger.
+Producers own categories, economic debit identity and physical-evidence provenance. Categories are validated and stored, but the current five rules do not vary by category. Producers sharing a scope need collision-free event IDs. Only `BOOKED` outgoing debit observations enter history. Authorization/capture updates, incoming credits, refunds and reversals are rejected. A later reversal does not erase the original observed debit; this service does not maintain a settlement or net-spend ledger.
 
 | Record | What it guarantees |
 | --- | --- |
@@ -96,7 +96,7 @@ Credentials contain generated 256-bit secrets in `keyId.secret` form. Only SHA-2
 
 Ingest, READ, POLICY and physical-source permissions are separate. Headers cannot grant scope or location trust. A request retains its admitted permission snapshot; revocation blocks later admissions. The security administrator manages identities with immutable principal scope and credential ownership/hash, automatic permission revisions and transactionally coupled audit entries. Runtime has SELECT only. Rotation creates a new key ID and revokes the old key; seed jobs preserve administrator changes. Credentials and real customer/card data stay out of Git, images and logs.
 
-A bounded Redis Lua script atomically enforces principal/route token buckets using Redis TIME. Configured principals bound key cardinality; invalid keys create no buckets. Refill time never moves backwards, tokens are capped, state expires and Redis uses `noeviction`. Dependency/script/memory errors close protected routes. Restart, state loss or forward clock jumps may replenish allowance; recovery resumes after health returns with an alert. These are abuse quotas, not durable financial limits.
+A bounded Redis Lua script atomically enforces principal/route token buckets using Redis TIME. Configured principals bound key cardinality; invalid keys create no buckets. Refill time never moves backwards, tokens are capped, state expires and Redis uses `noeviction`. Dependency/script/memory errors close protected routes. Restart, state loss or forward clock jumps may replenish allowance; recovery resumes after health returns. These are abuse quotas, not durable financial limits.
 
 The HTTP adapter rejects duplicate/unknown/missing fields, scalar coercion, invalid UTF-8, trailing JSON, unsupported content types/encodings and invalid static transaction/location facts. Declared and streamed bodies are bounded. Source permissions are checked before dispatch. Health routes do not need authentication or quotas. A nonblocking per-replica permit bounds admitted work and is released on every exit. Connector limits bound workers, connections, socket backlog, headers, discarded bodies and idle waits. Safe Problem responses include generated correlation IDs and `no-store`, without credentials or parser/SQL diagnostics.
 
