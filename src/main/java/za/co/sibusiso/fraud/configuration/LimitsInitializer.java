@@ -19,12 +19,7 @@ public final class LimitsInitializer implements ApplicationContextInitializer<Co
             ContractChecks.require(Integer.parseInt(deployedGrace)
                     == limits.operations().containerStopGraceSeconds(), "Declared container stop grace differs from deployment");
         }
-        var properties = new java.util.LinkedHashMap<String, Object>(limits.runtimeProperties());
-        if (environment.acceptsProfiles(Profiles.of("policy-admin"))) {
-            // One-shot administration establishes its first connection before borrowing it.
-            properties.put("spring.datasource.hikari.initialization-fail-timeout", limits.operations().poolAcquireTimeoutMillis());
-        }
-        environment.getPropertySources().addFirst(new MapPropertySource("validated-service-limits", properties));
+        environment.getPropertySources().addFirst(new MapPropertySource("validated-service-limits", limits.runtimeProperties()));
         context.getBeanFactory().registerSingleton("serviceLimits", limits);
     }
 }

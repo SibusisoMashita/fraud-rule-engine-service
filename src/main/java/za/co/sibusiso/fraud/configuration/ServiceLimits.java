@@ -152,7 +152,10 @@ public record ServiceLimits(int schemaVersion, Api api, Operations operations) {
         result.put(
                 "spring.datasource.hikari.validation-timeout",
                 operations.poolAcquireTimeoutMillis() / 2);
-        result.put("spring.datasource.hikari.initialization-fail-timeout", -1);
+        // Startup policy validation needs a physical connection before borrowing.
+        result.put(
+                "spring.datasource.hikari.initialization-fail-timeout",
+                operations.poolAcquireTimeoutMillis());
         result.put(
                 "spring.datasource.hikari.connection-init-sql",
                 "SET statement_timeout = '"

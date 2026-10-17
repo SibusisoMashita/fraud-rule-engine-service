@@ -6,8 +6,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.sql.SQLTransientConnectionException;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -57,25 +60,25 @@ class RuntimeFoundationTest {
     void validatedSettingsDriveTheRealPoolAndPolicyActivation() {
         assertThat(dataSource.getMaximumPoolSize()).isEqualTo(limits.operations().dbPoolMaxConnectionsPerReplica());
         assertThat(dataSource.getConnectionTimeout()).isEqualTo(limits.operations().poolAcquireTimeoutMillis());
+        assertThat(dataSource.getInitializationFailTimeout()).isEqualTo(limits.operations().poolAcquireTimeoutMillis());
         assertThat(jdbc.queryForObject("SHOW statement_timeout", String.class)).isEqualTo("1500ms");
         assertThat(jdbc.queryForObject("SHOW lock_timeout", String.class)).isEqualTo("1s");
         assertThat(policies.current().rules()).hasSize(5);
         assertThat(policies.current().policyHash()).matches("[a-f0-9]{64}");
     }
 
-    @Test
-    void policyAdministrationWaitsForColdConnectionWithoutExtendingRuntimeAcquisition() throws Exception {
-        assertThat(dataSource.getInitializationFailTimeout()).isNegative();
+    @ParameterizedTest
+    @ValueSource(strings = {"default", "policy-admin"})
+    void startupWaitsForColdConnectionWithoutExtendingRuntimeAcquisition(String profile) throws Exception {
         try (var context = new org.springframework.context.support.GenericApplicationContext()) {
             var environment = new org.springframework.mock.env.MockEnvironment()
                     .withProperty("fraud.limits-location", "classpath:config/service.example.yaml");
-            environment.setActiveProfiles("policy-admin");
+            environment.setActiveProfiles(profile);
             context.setEnvironment(environment);
             new za.co.sibusiso.fraud.configuration.LimitsInitializer().initialize(context);
             long acquire = environment.getRequiredProperty("spring.datasource.hikari.connection-timeout", Long.class);
             long initialize = environment.getRequiredProperty("spring.datasource.hikari.initialization-fail-timeout", Long.class);
             assertThat(acquire).isEqualTo(limits.operations().poolAcquireTimeoutMillis());
-            assertThat(initialize).isPositive();
             var slowDatabase = new org.springframework.jdbc.datasource.AbstractDataSource() {
                 @Override public java.sql.Connection getConnection() throws SQLException {
                     try { Thread.sleep(acquire * 2); }
@@ -101,7 +104,12 @@ class RuntimeFoundationTest {
                     var rows = statement.executeQuery("SELECT 1")) {
                 assertThat(rows.next()).isTrue();
                 assertThat(rows.getInt(1)).isEqualTo(1);
+                assertThat(pool.getInitializationFailTimeout()).isEqualTo(acquire);
                 assertThat(pool.getConnectionTimeout()).isEqualTo(acquire);
+                // The single connection stays borrowed; ordinary requests still time out.
+                assertThatThrownBy(pool::getConnection)
+                        .isInstanceOf(SQLTransientConnectionException.class)
+                        .hasMessageContaining("request timed out");
             }
         }
     }
