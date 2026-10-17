@@ -2,6 +2,41 @@
 
 Use this guide to run the local stack, change policy, manage credentials and diagnose failures. Start with the [README](../README.md#quickstart) for a fresh installation. Requirements for real financial data are listed in [Testing](TESTING.md#before-a-real-data-deployment).
 
+## Windows with WSL2
+
+Use Ubuntu in WSL2 for the repository commands. In **PowerShell as Administrator**, install it using [Microsoft's WSL guide](https://learn.microsoft.com/en-us/windows/wsl/install):
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+Restart if prompted, open Ubuntu and create your Linux user. If Ubuntu is already installed, skip installation. Back in PowerShell, check its version:
+
+```powershell
+wsl --list --verbose
+```
+
+Ubuntu must show **VERSION 2**. If it shows 1, run `wsl --set-version Ubuntu 2`, using the distribution name shown in the list. Keep WSL current with `wsl --update`.
+
+Install and start [Docker Desktop for Windows](https://docs.docker.com/desktop/features/wsl/). Use its **WSL 2 based engine** with **Linux containers**, then enable Ubuntu under **Settings → Resources → WSL Integration** and apply the change. This supplies Docker to Ubuntu; a separate Docker Engine installation inside Ubuntu is unnecessary.
+
+Open the **Ubuntu terminal**. Install the small set of host tools and check Docker access:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y git curl openssl
+docker version
+docker compose version
+mkdir -p ~/projects
+cd ~/projects
+```
+
+`docker version` must show both Client and Server. Compose must meet the README version requirement. If either check fails, revisit Docker Desktop's Ubuntu integration before continuing.
+
+From `~/projects`, follow the [README quickstart](../README.md#quickstart) to clone and start the service. Keep the checkout in Ubuntu's Linux filesystem so file permissions and secret mounts behave as intended. Run all later repository commands in Ubuntu. Install JDK 21 or Python 3.10+ **inside WSL** only when needed for the [tests and extra checks](TESTING.md#run-the-tests).
+
+Once started, use `http://localhost:8080` in your Windows browser or Postman, adjusting for any configured port change. Windows/WSL has not yet been tested for this project.
+
 ## First start and troubleshooting
 
 The README starts a fresh database, runs migrations and seeds the sample policy and local API identity. `init-secrets.sh` creates credentials in the ignored `secrets/` directory and preserves existing files. Later starts also preserve policy changes, evaluations and identity changes, including revocation.

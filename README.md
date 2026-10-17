@@ -14,6 +14,8 @@ Built with Java 21, Spring Boot, PostgreSQL and Redis. Optional HAProxy ingress 
 
 You need Git, Docker with Compose 2.24.4+, OpenSSL, curl and a POSIX shell (such as bash or zsh). Docker Desktop includes Compose. Downloads need internet access. Java, Maven and Python are not needed for this startup path.
 
+On Windows, complete the [WSL2 setup](docs/OPERATIONS.md#windows-with-wsl2) first. All commands below use a POSIX shell; on Windows, run them in the Ubuntu terminal.
+
 ```sh
 git clone https://github.com/SibusisoMashita/fraud-rule-engine-service.git
 cd fraud-rule-engine-service
