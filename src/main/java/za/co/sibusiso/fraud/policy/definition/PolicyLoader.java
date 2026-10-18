@@ -19,6 +19,8 @@ public final class PolicyLoader {
     public PolicySnapshot read(Resource resource) { return bind(yaml.read(resource, Document.class)); }
     public PolicySnapshot read(String text) { return bind(yaml.read(text, Document.class)); }
 
+    public PolicySnapshot read(Document document) { return bind(document); }
+
     private PolicySnapshot bind(Document input) {
         ContractChecks.require(input.schemaVersion() == 1 && input.canonicalizationVersion() == 1,
                 "Unsupported policy or canonicalization version");

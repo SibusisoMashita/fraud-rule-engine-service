@@ -30,6 +30,19 @@ The proxy provides one loopback entrypoint and routes only to ready apps. Its ti
 
 Checks run through the proxy and cover both ready instances, unavailable/unready removal and recovery, drain, no-ready rejection, shared limits, duplicate requests and complete database results. The busy/quiet demo verifies measured automatic scale-out and drained scale-in within configured bounds, cooldown and connection budget. Proxy scanning and fresh Docker build/start/test/stop checks complete the local validation. This does not establish maximum proxy throughput, managed production autoscaling or shared-database high availability.
 
+## Separate assessment UI
+
+The UI is a separate React and TypeScript project. Its planned screens are transaction scenarios, saved evaluations and policy editing. It uses the real API and shares its exact-decimal, permission and recovery contracts; Docker scaling controls stay in the existing scripts.
+
+| Check-in | Deliverable | Verification |
+| --- | --- | --- |
+| Backend policy administration | Opt-in protected API, conditional activation, narrow writer identity and complete policy contract | Permissions, invalid candidates, stale edits, live changes, audit, unchanged runtime grants and Docker startup |
+| UI foundation | Capitec-branded navigation, connection handling, evaluation/policy reads, Docker and CI | Real API access, empty/error states, responsive keyboard navigation and clean startup |
+| Transaction playground | Editable scenarios for all five rules, saved evidence and replay/recovery | Sequential history, exact decimals, conflicts and uncertain outcomes |
+| Policy editor | Shared form/JSON draft, validation, change preview and activation | Concurrent edits, live cross-instance policy changes and fresh-clone browser walkthrough |
+
+The backend administration API is the first check-in. The frontend screens and repository remain planned until their respective changes are delivered. Existing permissions and the ordinary quickstart remain the default.
+
 ## Future autoscaling change
 
 Stage 12 is optional deployment work. It needs a selected platform, secured app metrics and versioned minimum/maximum replicas, targets and stabilization settings. Maximum replicas plus rollout surge must fit the shared database connection budget. Scaling changes app count; live policy and caller quotas keep their existing behaviour.

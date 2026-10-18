@@ -3,19 +3,10 @@ package za.co.sibusiso.fraud.ingress.request;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
-import java.nio.ByteBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import tools.jackson.core.StreamReadConstraints;
-import tools.jackson.core.StreamReadFeature;
-import tools.jackson.core.json.JsonFactory;
-import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.json.JsonMapper;
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.contracts.ErrorCode;
 import za.co.sibusiso.fraud.domain.EventTime;
@@ -45,62 +36,17 @@ public final class TransactionDecoder {
                     "category",
                     "occurredAt");
     private final ServiceLimits.Api limits;
-    private final JsonMapper json;
+    private final JsonRequestReader json;
 
     public TransactionDecoder(ServiceLimits service) {
         this.limits = service.api();
-        var factory =
-                JsonFactory.builder()
-                        .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
-                        .streamReadConstraints(
-                                StreamReadConstraints.builder()
-                                        .maxNestingDepth(limits.maxJsonDepth())
-                                        .maxNumberLength(limits.maxJsonNumberLength())
-                                        .maxStringLength(limits.maxBodyBytes())
-                                        .maxNameLength(limits.maxBodyBytes())
-                                        .maxDocumentLength(limits.maxBodyBytes())
-                                        .build())
-                        .build();
-        json =
-                JsonMapper.builder(factory)
-                        .enable(
-                                DeserializationFeature.FAIL_ON_TRAILING_TOKENS,
-                                DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
-                        .build();
+        json = new JsonRequestReader(limits);
     }
 
     public TransactionEvent decode(
             InputStream input, long contentLength, String contentType, String encoding)
             throws IOException {
-        try {
-            MediaType type = MediaType.parseMediaType(contentType == null ? "" : contentType);
-            if (!type.getType().equals(MediaType.APPLICATION_JSON.getType())
-                    || !type.getSubtype().equals(MediaType.APPLICATION_JSON.getSubtype())
-                    || (type.getCharset() != null
-                            && !type.getCharset().equals(StandardCharsets.UTF_8))
-                    || (encoding != null && !encoding.equalsIgnoreCase("identity"))) {
-                throw new ApiFailure(
-                        HttpStatus.UNSUPPORTED_MEDIA_TYPE, ErrorCode.UNSUPPORTED_MEDIA_TYPE);
-            }
-        } catch (IllegalArgumentException invalid) {
-            throw new ApiFailure(
-                    HttpStatus.UNSUPPORTED_MEDIA_TYPE, ErrorCode.UNSUPPORTED_MEDIA_TYPE);
-        }
-        if (contentLength > limits.maxBodyBytes()) {
-            throw new ApiFailure(HttpStatus.CONTENT_TOO_LARGE, ErrorCode.BODY_TOO_LARGE);
-        }
-        byte[] bytes = input.readNBytes(limits.maxBodyBytes() + 1);
-        if (bytes.length > limits.maxBodyBytes()) {
-            throw new ApiFailure(HttpStatus.CONTENT_TOO_LARGE, ErrorCode.BODY_TOO_LARGE);
-        }
-        JsonNode root;
-        try {
-            String text =
-                    StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString();
-            root = json.readTree(text);
-        } catch (RuntimeException | CharacterCodingException malformed) {
-            throw new ApiFailure(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_JSON);
-        }
+        JsonNode root = json.read(input, contentLength, contentType, encoding);
         fields(root, REQUIRED, Set.of("physicalLocation"));
         try {
             PhysicalLocation location = null;

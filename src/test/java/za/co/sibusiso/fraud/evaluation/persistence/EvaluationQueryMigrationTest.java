@@ -52,7 +52,7 @@ class EvaluationQueryMigrationTest {
             store.advance("migration","customer",accepted,1);
         });
         String before=store.find("migration","event").orElseThrow().json();
-        var flyway=Flyway.configure().dataSource(DATABASE.getJdbcUrl(),"fraud_migrator",TestDatabase.PASSWORD).defaultSchema("fraud").load();
+        var flyway=Flyway.configure().dataSource(DATABASE.getJdbcUrl(),"fraud_migrator",TestDatabase.PASSWORD).defaultSchema("fraud").target("8").load();
         assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1);assertThat(flyway.migrate().migrationsExecuted).isZero();
         assertThat(store.find("migration","event").orElseThrow().json()).isEqualTo(before);
         assertThat(runtime.queryForObject("SELECT customer_id FROM fraud.evaluations WHERE scope='migration'",String.class)).isEqualTo("customer");

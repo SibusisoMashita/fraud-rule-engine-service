@@ -290,14 +290,14 @@ expect /health/ready 503
 expect /health/live 200
 compose start db
 ready
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 8
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT version FROM fraud.service_metadata' | grep -qx 9
 compose stop app
 compose logs app | grep -q 'Graceful shutdown complete'
 compose up -d --no-build
 ready
 # Re-running the real migration entrypoint must preserve the installed schema.
 compose run --rm --no-deps migrate
-compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 8
+compose exec -T db psql -U postgres -d fraud -Atc 'SELECT count(*) FROM fraud.flyway_schema_history WHERE success' | grep -qx 9
 test "$(head_hash)" = "$active_hash"
 test "$(api_request "$base" GET /api/v1/transactions/smoke-race /dev/null "$flow_tmp/restarted.json")" = 200
 cmp -s "$flow_tmp/first.json" "$flow_tmp/restarted.json"

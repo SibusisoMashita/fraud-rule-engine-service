@@ -4,7 +4,7 @@ The service is a Java modular monolith backed by PostgreSQL and Redis. All five 
 
 ## Application boundaries
 
-HTTP controllers, their exception advice and documentation setup live in `ingress`: `IngressController` handles the API and `HealthController` handles probes. Subpackages group request decoding and deadlines (`ingress.request`), authentication, security setup and shared quotas (`ingress.security`), and HTTP problem responses (`ingress.error`). The API adapters authenticate callers, validate requests and enforce quotas. Application services coordinate use cases and transactions. Pure domain rules evaluate immutable facts without making network or database calls. Infrastructure adapters handle SQL, policy loading and Redis. Repository interfaces describe specific persistence operations.
+HTTP controllers, their exception advice and documentation setup live in `ingress`: `IngressController` handles transaction/query requests, the optional `PolicyManagementController` handles administration, and `HealthController` handles probes. Subpackages group request decoding and deadlines (`ingress.request`), authentication, security setup and shared quotas (`ingress.security`), and HTTP problem responses (`ingress.error`). The API adapters authenticate callers, validate requests and enforce quotas. Application services coordinate use cases and transactions. Pure domain rules evaluate immutable facts without making network or database calls. Infrastructure adapters handle SQL, policy loading and Redis. Repository interfaces describe specific persistence operations.
 
 Startup limits and strict YAML parsing live in `configuration`. Business policy settings, typed rule definitions and validation live in `policy.definition`; `policy` manages activation and reads the active database version.
 
@@ -21,7 +21,7 @@ Evaluation wiring, build identity and the shared flow failure remain at the pack
 
 Follow an ingestion request through [IngressController](../src/main/java/za/co/sibusiso/fraud/ingress/IngressController.java), [TransactionService](../src/main/java/za/co/sibusiso/fraud/evaluation/application/TransactionService.java), [TransactionalEvaluation](../src/main/java/za/co/sibusiso/fraud/evaluation/application/TransactionalEvaluation.java) and [RuleEngine](../src/main/java/za/co/sibusiso/fraud/evaluation/rules/RuleEngine.java).
 
-Spring JDBC keeps scoped queries, aggregates and row locks explicit. One HikariCP DataSource and JdbcTransactionManager coordinate writes. PostgreSQL owns transactions, evaluations, identities and policy; Redis holds abuse quotas. There is no broker or external event publication in v1, so no outbox is needed.
+Spring JDBC keeps scoped queries, aggregates and row locks explicit. One runtime HikariCP pool and JdbcTransactionManager coordinate financial writes. PostgreSQL owns transactions, evaluations, identities and policy; Redis holds abuse quotas. There is no broker or external event publication in v1, so no outbox is needed.
 
 ## How an evaluation is saved
 
@@ -62,6 +62,16 @@ Pagination is a live traversal, not a snapshot: each page opens a new read trans
 
 Policy inspection uses the same live provider as ingestion. It returns one captured hash and typed rule settings, including disabled rules, under POLICY permission and a separate quota. It excludes secrets, source YAML and infrastructure settings. Reading policy cannot activate it or change stored evaluations. Retrospective re-evaluation and export are deferred.
 
+## Optional policy administration
+
+The administrator API is disabled by default. When enabled, a separate global `POLICY_ADMIN` permission protects full-document reading, validation and conditional activation. `POLICY` remains inspection-only. Administration reuses the protected request bounds. Its routes share one administrator bucket configured with the existing policy quota settings.
+
+The adapter reuses the policy loader and rule-engine verification. Validation is read-only. Activation requires a strong revision ETag through `If-Match`; the database compares that revision while holding the head-row lock. Another activation returns 412, including an A → B → A change. An unchanged policy preserves its revision. The existing CLI and HTTP activation share the same atomic version, pointer and audit update.
+
+A dedicated adapter-owned writer pool authenticates as `fraud_policy_api`; enabling it does not replace the runtime datasource or widen its grants. This role can read policy and call only conditional activation, with no table writes, schema changes or CLI activation permission. Audit retains the database actor and records the authenticated API principal. Requests cannot nominate that actor. An uncertain activation response requires reading current revision/hash before deciding what to do; the server does not retry writes automatically.
+
+[Operations](OPERATIONS.md#optional-policy-administration-api) covers the opt-in Compose overlay, separate credentials and connection budget. The frontend remains a separate delivery milestone.
+
 ## Data ownership and representation
 
 Producers own categories, economic debit identity and physical-evidence provenance. Categories are validated and stored, but the current five rules do not vary by category. Producers sharing a scope need collision-free event IDs. Only `BOOKED` outgoing debit observations enter history. Authorization/capture updates, incoming credits, refunds and reversals are rejected. A later reversal does not erase the original observed debit; this service does not maintain a settlement or net-spend ledger.
@@ -84,7 +94,7 @@ R2/R3 use acceptance time; R4/R5 use event time over already observed history. T
 
 ## Live policy and stable identities
 
-[Business policy](../config/policy.example.yaml) and [startup settings](../config/service.example.yaml) are separate. PostgreSQL holds immutable policy versions, one active reference and append-only activation history. The configuration identity activates policy through a serialized database function; runtime has SELECT only.
+[Business policy](../config/policy.example.yaml) and [startup settings](../config/service.example.yaml) are separate. PostgreSQL holds immutable policy versions, one active reference and append-only activation history. The CLI configuration identity activates policy through a serialized database function; the primary runtime database identity has SELECT only on policy tables.
 
 Every selection reads the committed active hash. It may reuse a cached typed version only for that exact hash; there is no polling delay or fallback on database/configuration failure. **Business changes require no app restart.** An evaluation keeps the policy it started with. Operational limits require validated startup configuration. [Operations](OPERATIONS.md) explains activation and recovery.
 

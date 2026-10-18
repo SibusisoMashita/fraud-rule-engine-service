@@ -220,6 +220,8 @@ def run(stack, record):
     for role, name in [('fraud_policy_admin', 'db-policy-password'), ('fraud_security_admin', 'db-security-password')]:
         password = (stack.credentials / name).read_text().strip()
         roles.append(f"CREATE ROLE {role} LOGIN PASSWORD '{password}'; GRANT CONNECT ON DATABASE fraud TO {role};")
+    # Database dumps retain this role's policy ACLs, but do not create cluster roles.
+    roles.append('CREATE ROLE fraud_policy_api NOLOGIN; GRANT CONNECT ON DATABASE fraud TO fraud_policy_api;')
     stack.sql('\n'.join(roles), 'restore-db')
     stack.compose('exec', '-T', 'restore-db', 'pg_restore', '-U', 'postgres', '-d', 'fraud', '--clean', '--if-exists', '--exit-on-error', data=dump)
     check(invariant_counts(stack, 'restore-db') == before, 'Restored counts differ from backup boundary')

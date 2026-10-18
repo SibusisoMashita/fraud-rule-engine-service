@@ -13,7 +13,7 @@ import za.co.sibusiso.fraud.ingress.error.ApiFailure;
 import za.co.sibusiso.fraud.ingress.error.ApiFailure.Outcome;
 import za.co.sibusiso.fraud.ingress.error.ApiProblems;
 
-@RestControllerAdvice(assignableTypes = IngressController.class)
+@RestControllerAdvice(assignableTypes = {IngressController.class, PolicyManagementController.class})
 @Profile("!migrate & !policy-admin")
 public final class IngressAdvice {
     @ExceptionHandler(FlowFailure.class)
@@ -67,7 +67,8 @@ public final class IngressAdvice {
                     response,
                     new ApiFailure(
                             HttpStatus.SERVICE_UNAVAILABLE,
-                            ErrorCode.RESPONSE_OUTCOME_UNKNOWN,
+                            Boolean.TRUE.equals(request.getAttribute(PolicyManagementController.POLICY_RESPONSE))
+                                    ? ErrorCode.POLICY_OUTCOME_UNKNOWN : ErrorCode.RESPONSE_OUTCOME_UNKNOWN,
                             ApiFailure.DEFAULT_RETRY_AFTER_SECONDS,
                             outcome,
                             failure));
@@ -95,7 +96,8 @@ public final class IngressAdvice {
     }
 
     private static Outcome financialOutcome(HttpServletRequest request) {
-        return Boolean.TRUE.equals(request.getAttribute(IngressController.FINANCIAL_RESPONSE))
+        return (Boolean.TRUE.equals(request.getAttribute(IngressController.FINANCIAL_RESPONSE))
+                        || Boolean.TRUE.equals(request.getAttribute(PolicyManagementController.POLICY_RESPONSE)))
                 ? Outcome.UNKNOWN
                 : Outcome.NOT_ACCEPTED;
     }

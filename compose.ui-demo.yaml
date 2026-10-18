@@ -1,0 +1,34 @@
+# Optional local policy administration. The ordinary quickstart needs no extra secrets.
+services:
+  db-bootstrap:
+    secrets:
+      - fraud.policy-management.password
+  policy-admin-identity-seed:
+    image: postgres:17.11-alpine3.24@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    user: postgres
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    environment:
+      LOCAL_KEY_VALIDITY_DAYS: ${LOCAL_KEY_VALIDITY_DAYS:-30}
+    secrets: [db-security-password, local-policy-admin-api-key]
+    volumes:
+      - ./docker/seed-local-policy-admin.sh:/seed.sh:ro
+    entrypoint: [/bin/sh, /seed.sh]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: 'no'
+  app:
+    environment:
+      FRAUD_POLICY_MANAGEMENT_ENABLED: 'true'
+      FRAUD_POLICY_MANAGEMENT_MAX_CONNECTIONS: ${POLICY_MANAGEMENT_MAX_CONNECTIONS:-1}
+    secrets:
+      - fraud.policy-management.password
+    depends_on:
+      policy-admin-identity-seed: {condition: service_completed_successfully}
+secrets:
+  fraud.policy-management.password: {file: ./secrets/fraud.policy-management.password}
+  local-policy-admin-api-key: {file: ./secrets/local-policy-admin-api-key}

@@ -67,6 +67,24 @@ class RuntimeFoundationTest {
         assertThat(policies.current().policyHash()).matches("[a-f0-9]{64}");
     }
 
+    @Test
+    void defaultRuntimeKeepsOneFinancialDatasourceAndNoPolicyManagementBeans(
+            @Autowired org.springframework.context.ApplicationContext context) {
+        assertThat(context.getBeansOfType(javax.sql.DataSource.class).values())
+                .containsExactly(dataSource);
+        assertThat(context.getBeansOfType(JdbcTemplate.class).values()).containsExactly(jdbc);
+        assertThat(context.getBeansOfType(org.springframework.transaction.PlatformTransactionManager.class).values())
+                .singleElement()
+                .isInstanceOfSatisfying(org.springframework.jdbc.datasource.DataSourceTransactionManager.class,
+                        manager -> assertThat(manager.getDataSource()).isSameAs(dataSource));
+        assertThat(context.getBeansOfType(za.co.sibusiso.fraud.policy.management.JdbcPolicyWriter.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(za.co.sibusiso.fraud.policy.management.PolicyManagementService.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(za.co.sibusiso.fraud.ingress.PolicyManagementController.class))
+                .isEmpty();
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"default", "policy-admin"})
     void startupWaitsForColdConnectionWithoutExtendingRuntimeAcquisition(String profile) throws Exception {
@@ -146,12 +164,12 @@ class RuntimeFoundationTest {
 
     @Test
     void schemaMismatchPreventsReadiness() throws Exception {
-        changeSchemaVersion(99, 8);
+        changeSchemaVersion(99, 9);
         try {
             assertResponse("/health/ready", 503, "{\"status\":\"DOWN\"}");
             assertResponse("/health/live", 200, "{\"status\":\"UP\"}");
         } finally {
-            changeSchemaVersion(8, 99);
+            changeSchemaVersion(9, 99);
         }
     }
 

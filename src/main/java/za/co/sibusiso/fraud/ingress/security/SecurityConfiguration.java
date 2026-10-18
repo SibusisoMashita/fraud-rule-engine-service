@@ -1,5 +1,6 @@
 package za.co.sibusiso.fraud.ingress.security;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -44,7 +45,8 @@ class SecurityConfiguration {
             HttpSecurity http,
             CredentialAuthenticator authenticator,
             SharedRateLimiter limiter,
-            ServiceLimits limits)
+            ServiceLimits limits,
+            @Value("${fraud.policy-management.enabled:false}") boolean policyManagementEnabled)
             throws Exception {
         return http
                 // Credentials use headers; no cookie-based login or browser session exists.
@@ -53,7 +55,7 @@ class SecurityConfiguration {
                 .sessionManagement(
                         session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(
-                        new IngressFilter(authenticator, limiter, limits),
+                        new IngressFilter(authenticator, limiter, limits, policyManagementEnabled),
                         AnonymousAuthenticationFilter.class)
                 .authorizeHttpRequests(
                         auth -> {
@@ -76,9 +78,16 @@ class SecurityConfiguration {
                                             ApiPaths.EVALUATIONS)
                                     .hasAuthority(Caller.Role.READ.name())
                                     .requestMatchers(HttpMethod.GET, ApiPaths.RULES)
-                                    .hasAuthority(Caller.Role.POLICY.name())
-                                    .anyRequest()
-                                    .denyAll();
+                                    .hasAuthority(Caller.Role.POLICY.name());
+                            if (policyManagementEnabled) {
+                                auth.requestMatchers(HttpMethod.GET, ApiPaths.ADMIN_POLICY)
+                                        .hasAuthority(Caller.Role.POLICY_ADMIN.name())
+                                        .requestMatchers(HttpMethod.PUT, ApiPaths.ADMIN_POLICY)
+                                        .hasAuthority(Caller.Role.POLICY_ADMIN.name())
+                                        .requestMatchers(HttpMethod.POST, ApiPaths.ADMIN_POLICY_VALIDATE)
+                                        .hasAuthority(Caller.Role.POLICY_ADMIN.name());
+                            }
+                            auth.anyRequest().denyAll();
                         })
                 .exceptionHandling(
                         errors ->

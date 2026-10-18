@@ -75,6 +75,8 @@ cp config/policy.example.yaml secrets/my-policy.yaml
 
 New evaluations use the updated policy without a restart. Each evaluation keeps the version it started with; saved results stay unchanged. Editing the seed file alone does not activate a change. [Rules](docs/RULES.md) explains the settings; [Operations](docs/OPERATIONS.md#business-policy-live-database-configuration) covers activation and rollback. Infrastructure [service limits](config/service.example.yaml) require a restart.
 
+The optional [administrator API](docs/OPERATIONS.md#optional-policy-administration-api) uses a separate credential and is disabled in the normal quickstart.
+
 ## Run tests
 
 For Java tests, install JDK 21, set `JAVA_HOME` and keep Docker running. Maven is included through the wrapper:

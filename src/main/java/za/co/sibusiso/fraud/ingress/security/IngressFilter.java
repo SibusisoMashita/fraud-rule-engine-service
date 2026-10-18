@@ -26,14 +26,24 @@ public final class IngressFilter extends OncePerRequestFilter {
     private final SharedRateLimiter limiter;
     private final ServiceLimits limits;
     private final Semaphore admission;
+    private final boolean policyManagementEnabled;
 
     public IngressFilter(
             CredentialAuthenticator authenticator,
             SharedRateLimiter limiter,
             ServiceLimits limits) {
+        this(authenticator, limiter, limits, false);
+    }
+
+    public IngressFilter(
+            CredentialAuthenticator authenticator,
+            SharedRateLimiter limiter,
+            ServiceLimits limits,
+            boolean policyManagementEnabled) {
         this.authenticator = authenticator;
         this.limiter = limiter;
         this.limits = limits;
+        this.policyManagementEnabled = policyManagementEnabled;
         this.admission = new Semaphore(limits.operations().maxConcurrentRequestsPerReplica());
     }
 
@@ -42,7 +52,9 @@ public final class IngressFilter extends OncePerRequestFilter {
             HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         ApiProblems.prepare(request, response);
-        IngressRoute route = IngressRoute.resolve(request.getMethod(), request.getRequestURI());
+        IngressRoute route =
+                IngressRoute.resolve(
+                        request.getMethod(), request.getRequestURI(), policyManagementEnabled);
         if (route == null) {
             chain.doFilter(request, response);
             return;

@@ -15,6 +15,16 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class IngressFlowBoundaryTest {
+    @Test void responseWriteFailureAfterPolicyActivationRequiresInspectionBeforeAnyRetry() throws Exception {
+        var advice = new IngressAdvice();
+        var request = new MockHttpServletRequest("PUT", ApiPaths.ADMIN_POLICY);
+        request.setAttribute(PolicyManagementController.POLICY_RESPONSE, true);
+        var response = new MockHttpServletResponse();
+        advice.unreadable(new java.io.IOException("private write failure"), request, response);
+        assertThat(response.getStatus()).isEqualTo(503);
+        assertThat(response.getContentAsString()).contains("POLICY_OUTCOME_UNKNOWN", "UNKNOWN")
+                .doesNotContain("NOT_ACCEPTED", "private write failure");
+    }
     @Test void responseWriteFailureAfterFinancialWorkCannotBeReportedAsInvalidUnacceptedInput() throws Exception {
         var advice=new IngressAdvice();var request=new MockHttpServletRequest();var before=new MockHttpServletResponse();
         advice.unreadable(new java.io.IOException("read failed"),request,before);assertThat(before.getStatus()).isEqualTo(400);assertThat(before.getContentAsString()).contains("NOT_ACCEPTED");

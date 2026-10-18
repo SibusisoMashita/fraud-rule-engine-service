@@ -35,7 +35,7 @@ class HealthController {
             Boolean schemaReady =
                     jdbc.queryForObject(
                             "SELECT EXISTS (SELECT 1 FROM fraud.service_metadata WHERE version ="
-                                + " 8)",
+                                + " 9)",
                             Boolean.class);
             String pong = redis.execute(connection -> connection.ping(), true);
             if (Boolean.TRUE.equals(schemaReady) && "PONG".equals(pong)) {

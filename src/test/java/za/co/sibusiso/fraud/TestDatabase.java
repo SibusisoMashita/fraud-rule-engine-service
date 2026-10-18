@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public final class TestDatabase {
     public static final String PASSWORD = "synthetic-test-password";
     private TestDatabase() { }
-    public static void initialize(PostgreSQLContainer DATABASE) throws SQLException { initialize(DATABASE,8); }
+    public static void initialize(PostgreSQLContainer DATABASE) throws SQLException { initialize(DATABASE,9); }
     public static void initialize(PostgreSQLContainer DATABASE,int version) throws SQLException {
         try (var connection = DriverManager.getConnection(DATABASE.getJdbcUrl(), DATABASE.getUsername(), DATABASE.getPassword());
                 var statement = connection.createStatement()) {
@@ -18,6 +18,7 @@ public final class TestDatabase {
             statement.execute("CREATE ROLE fraud_runtime LOGIN PASSWORD 'synthetic-test-password'");
             statement.execute("CREATE ROLE fraud_security_admin LOGIN PASSWORD 'synthetic-test-password'");
             statement.execute("CREATE ROLE fraud_policy_admin LOGIN PASSWORD 'synthetic-test-password'");
+            statement.execute("CREATE ROLE fraud_policy_api LOGIN PASSWORD 'synthetic-test-password'");
             statement.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC");
             statement.execute("CREATE SCHEMA fraud AUTHORIZATION fraud_migrator");
             statement.execute("GRANT USAGE ON SCHEMA fraud TO fraud_runtime");

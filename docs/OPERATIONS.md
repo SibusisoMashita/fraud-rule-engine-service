@@ -78,20 +78,55 @@ cp config/policy.example.yaml secrets/my-policy.yaml
 
 The working copy stays outside Git. Editing a file alone does not change the active policy. New evaluations use the updated version without restarting; saved evaluations keep their original results.
 
-The service reads the active policy through `fraud.policy_head`. `policy_versions` stores immutable source documents keyed by canonical hash; `policy_activations` records each activation revision, timestamp and database login. Runtime reads these tables but cannot change them. The dedicated `fraud_policy_admin` identity can activate only through the fixed-search-path database function; it cannot update/delete published versions or bypass activation history.
+The service reads the active policy through `fraud.policy_head`. `policy_versions` stores immutable source documents keyed by canonical hash; `policy_activations` records each activation revision, timestamp, database login and, for API activation, authenticated administrator. The primary runtime identity reads these tables but cannot change them. The dedicated `fraud_policy_admin` identity can activate only through the fixed-search-path database function; it cannot update/delete published versions or bypass activation history.
 
 The current reference and recent activations can be inspected locally with:
 
 ```sh
 docker compose exec -T db psql -U postgres -d fraud -c 'SELECT revision, policy_hash FROM fraud.policy_head'
-docker compose exec -T db psql -U postgres -d fraud -c 'SELECT revision, policy_hash, activated_at, activated_by FROM fraud.policy_activations ORDER BY revision DESC LIMIT 10'
+docker compose exec -T db psql -U postgres -d fraud -c 'SELECT revision, policy_hash, activated_at, activated_by, activated_principal_id FROM fraud.policy_activations ORDER BY revision DESC LIMIT 10'
 ```
 
 The [activation command](../scripts/activate-policy.sh) validates the exact input before invoking that function. An invalid file exits unsuccessfully without changing active policy. Activations serialize on the singleton head row; version insertion, pointer update and audit insertion commit together. Repeating the current hash is a no-op. To roll back a business change, activate its previous compatible policy document; this creates an auditable activation, not a history rewrite. The command uses the deployed image's rule definitions; algorithm changes require a compatible application release.
 
 Each evaluation reads the committed policy reference once, after taking the customer lock, and records its hash. That whole version remains in use even if someone activates a change during processing. Parsed versions are cached by hash; the service still reads the current reference every time and never falls back to a stale policy. Identical retries return the saved evaluation before checking current new-event currency/age eligibility.
 
-Initial Compose startup seeds the example only when no active version exists. Recreating the application or rerunning the seed job preserves business changes. Direct database calls bypass the Java validator: an invalid document or incompatible hash closes readiness until a valid compatible policy is activated. Database loss also closes readiness even with a cached version. Policy changes use the operator CLI; there is no HTTP write endpoint.
+Initial Compose startup seeds the example only when no active version exists. Recreating the application or rerunning the seed job preserves business changes. Direct database calls bypass the Java validator: an invalid document or incompatible hash closes readiness until a valid compatible policy is activated. Database loss also closes readiness even with a cached version. Policy changes use the operator CLI by default. The optional administrator API below uses the same validation and atomic activation boundary.
+
+## Optional policy administration API
+
+The normal quickstart leaves HTTP policy administration disabled and mounts no writer credential. To enable it locally, prepare the additional secrets and use the overlay for every Compose operation on this stack:
+
+```sh
+./scripts/init-ui-demo-secrets.sh
+docker compose -f compose.yaml -f compose.ui-demo.yaml build app
+docker compose -f compose.yaml -f compose.ui-demo.yaml up -d --no-build --wait --wait-timeout 120
+```
+
+Use `secrets/local-api-key` for ordinary transactions and queries. Use the separate `secrets/local-policy-admin-api-key` for administration. The latter grants only global `POLICY_ADMIN`, not transaction ingestion or query access. Both files stay local; neither API key is mounted into the app. The optional seed preserves existing disabled, expired or revoked identities. `LOCAL_KEY_VALIDITY_DAYS` sets initial expiry, as for the ordinary key.
+
+Inspect the editable policy and its revision ETag:
+
+```sh
+printf 'header = "X-API-Key: %s"\n' "$(cat secrets/local-policy-admin-api-key)" |
+  curl --config - --include http://localhost:8080/api/v1/admin/policy
+```
+
+Use the `document` object as the complete JSON body for `POST /api/v1/admin/policy/validate`. After validation and review, send that same document to `PUT /api/v1/admin/policy`, with the exact strong `ETag` from the read response as `If-Match`. Swagger supports these requests too. [OpenAPI](../api/openapi.yaml) defines their bodies and responses. Monetary settings remain quoted decimal strings; startup limits and credentials are outside the document.
+
+Activation without `If-Match` returns 428; malformed tags return 400. If someone else changed the revision, 412 preserves the active policy. Keep your draft, read the current version and review the differences before another attempt. An unchanged current policy returns 200 without a new revision. Policy changes apply globally to new evaluations across app instances; saved evaluations and replays remain unchanged.
+
+A timeout or `POLICY_OUTCOME_UNKNOWN` response may follow a committed activation. Read the current revision/hash and compare them with the candidate hash; do not automatically repeat the PUT. A matching hash proves that the requested policy is active, not which administrator activated it. Invalid candidates return `POLICY_INVALID` without saving versions or activation history.
+
+The overlay sets `fraud.policy-management.enabled=true`, supplies `fraud.policy-management.password` through a secret mount and sets the writer-pool ceiling from `POLICY_MANAGEMENT_MAX_CONNECTIONS` (default 1). Its positive value cannot exceed the existing runtime pool limit. Existing database timeouts apply. Include both pools when sizing the deployment:
+
+```text
+(maximum replicas + rollout surge) × (runtime pool + policy writer pool) ≤ application connection budget
+```
+
+Default bootstrap creates `fraud_policy_api` without login and marks it unconfigured. The first opt-in provisions its password and removes that marker. Later starts preserve its password and any deliberately disabled login. The role can read the policy tables and execute only conditional activation; it cannot directly update tables or call the CLI activation function. Editing a secret file is not database password rotation. Coordinate an explicit database password change and the mounted secret before recreating the apps.
+
+To disable the feature, recreate the app using only the normal Compose file. Keep the optional key revoked or its principal disabled when it is no longer needed. The overlay exposes no database port and does not enable CORS or grant Docker controls.
 
 ## Infrastructure: validated startup configuration
 
@@ -128,7 +163,7 @@ SQL
 
 The same identity manages `enabled`, `roles`, `location_sources` and validity intervals through validated database columns. Rotation inserts a newly generated key ID/secret hash with an explicit validity interval for the existing principal, verifies the new credential, then revokes the old key. Both keys share the principal's quota. Transfer the plaintext secret through the deployment's secret-delivery mechanism; PostgreSQL receives only its SHA-256 hash. A different scope requires a new principal. External identity-provider/secret-manager integration is outside the local assessment runtime.
 
-The local seed uses `local-demo` with all three roles and both verified physical sources, plus `secrets/local-api-key`. `LOCAL_KEY_VALIDITY_DAYS` configures initial expiry (default 30 days). Rerunning it preserves existing principals/credentials, including disabled, expired or revoked records; editing/regenerating a secret file is not credential rotation.
+The ordinary local seed uses `local-demo` with INGEST, READ and POLICY, both verified physical sources and `secrets/local-api-key`. `LOCAL_KEY_VALIDITY_DAYS` configures initial expiry (default 30 days). Rerunning it preserves existing principals/credentials, including disabled, expired or revoked records; editing/regenerating a secret file is not credential rotation.
 
 ## Admission and quota behaviour
 
@@ -154,7 +189,7 @@ Runtime has SELECT/INSERT on immutable transactions, evaluations, rule results a
 
 All five rules are implemented and enabled in the sample policy. Activation rejects enabling an unavailable rule; bypassing the validator through raw SQL closes readiness and new-event selection until a compatible policy is restored. Existing results remain immutable.
 
-Existing installations retain their active policy while upgrading. Prepare a compatible [startup configuration](../config/service.example.yaml), including the travel candidate safety ceiling and documentation toggle. Drain ingestion before applying migrations; this build requires schema marker 8, so older images need a coordinated release. For an installation already using the guarded Alpine image family, use the commands below. Earlier Debian installations first require the [logical migration](#database-image-migration). For local Compose:
+Existing installations retain their active policy while upgrading. Prepare a compatible [startup configuration](../config/service.example.yaml), including the travel candidate safety ceiling and documentation toggle. Drain ingestion before applying migrations; this build requires schema marker 9, so older images need a coordinated release. For an installation already using the guarded Alpine image family, use the commands below. Earlier Debian installations first require the [logical migration](#database-image-migration). For local Compose:
 
 ```sh
 ./scripts/init-secrets.sh
@@ -163,7 +198,7 @@ docker compose stop app
 docker compose up -d --no-build --wait --wait-timeout 120
 ```
 
-Flyway applies only pending migrations and preserves evaluations, identities and policy history. V8 backfills evaluation navigation fields and builds scoped acceptance-time/customer/decision indexes. Backfill and index creation use normal PostgreSQL locking; drain ingestion and schedule the migration for a large existing dataset. Keep the data volume and applied migration history. Fresh startup seeds the compatible sample only when no active policy exists.
+Flyway applies only pending migrations and preserves evaluations, identities and policy history. V8 backfills evaluation navigation fields and builds scoped acceptance-time/customer/decision indexes. V9 adds administrator permission, conditional policy activation and API-principal audit fields while preserving existing policy and CLI behaviour. Backfill and index creation use normal PostgreSQL locking; drain ingestion and schedule the migration for a large existing dataset. Keep the data volume and applied migration history. Fresh startup seeds the compatible sample only when no active policy exists.
 
 This upgrade requires no business-policy activation. Existing rule settings and enabled states remain authoritative. To change them, activate a validated working copy using the business-policy procedure above; recreating the app or editing the seed file does not activate business changes.
 
@@ -203,7 +238,7 @@ Set `api.documentationEnabled: false` in startup configuration and restart to di
 | Probe | Success | Failure | Meaning |
 | --- | --- | --- | --- |
 | `GET /health/live` | 200 `{"status":"UP"}` | Unreachable during termination | Process can serve HTTP; no shared dependency checks |
-| `GET /health/ready` | 200 `{"status":"UP"}` | 503 `{"status":"DOWN"}` | Schema marker v8, a valid compatible active database policy and authenticated Redis ping succeed |
+| `GET /health/ready` | 200 `{"status":"UP"}` | 503 `{"status":"DOWN"}` | Schema marker v9, a valid compatible active database policy and authenticated Redis ping succeed |
 
 Probes expose no dependency names or diagnostics. Readiness verifies policy compatibility but does not authorize business traffic. Transaction POST and event GET enforce admission and execute the implemented flow. Evaluation pages and live policy inspection enforce their scoped READ/POLICY permissions, shared quotas and configured query bounds. Default login, diagnostic and unknown routes remain denied. Health routes belong on a restricted operational network when deployed externally.
 
@@ -291,7 +326,7 @@ The scans on 2026-10-16 returned zero HIGH/CRITICAL vulnerabilities and zero sec
 
 ## Database image migration
 
-PostgreSQL data directories are not portable across arbitrary OS, locale or image-family changes. The guard checks a marker written only when this image family initializes a cluster and rejects an unmarked or mismatched existing directory before the official entrypoint can change ownership or start PostgreSQL. Do not add a marker to legacy data or bypass the guard. Preserve the source volume and use a logical dump/restore into an empty target. New clusters use [PostgreSQL's built-in C.UTF-8 locale](https://www.postgresql.org/docs/17/app-initdb.html), avoiding dependence on glibc/musl collation definitions. The schema marker remains 8; no new Flyway migrations or fraud-policy changes are required.
+PostgreSQL data directories are not portable across arbitrary OS, locale or image-family changes. The guard checks a marker written only when this image family initializes a cluster and rejects an unmarked or mismatched existing directory before the official entrypoint can change ownership or start PostgreSQL. Do not add a marker to legacy data or bypass the guard. Preserve the source volume and use a logical dump/restore into an empty target. New clusters use [PostgreSQL's built-in C.UTF-8 locale](https://www.postgresql.org/docs/17/app-initdb.html), avoiding dependence on glibc/musl collation definitions. Changing the image family preserves the restored Flyway history; it does not itself change business policy. Apply any pending application migrations before starting this build, which requires schema marker 9.
 
 For a coordinated migration of an existing local installation, retain the existing secrets and original source image/volume. Stop external producers and the source application before taking the final dump. The following creates a separate target project and never deletes the source volume:
 
