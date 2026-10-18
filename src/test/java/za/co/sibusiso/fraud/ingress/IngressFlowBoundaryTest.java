@@ -7,7 +7,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.configuration.StrictYaml;
-import za.co.sibusiso.fraud.evaluation.TransactionService;
+import za.co.sibusiso.fraud.evaluation.application.TransactionService;
 import za.co.sibusiso.fraud.ingress.error.ApiFailure;
 import za.co.sibusiso.fraud.ingress.security.Caller;
 
@@ -24,7 +24,7 @@ class IngressFlowBoundaryTest {
     @Test void tightenedIdentifierConfigurationAppliesToReadsBeforeAnyLookup() {
         var yaml=new StrictYaml();var limits=yaml.read(yaml.readText(new ClassPathResource("config/service.example.yaml"))
                 .replace("maxIdentifierLength: 128","maxIdentifierLength: 3"),ServiceLimits.class);
-        var service=mock(TransactionService.class);var controller=new IngressController(limits,service,mock(za.co.sibusiso.fraud.evaluation.EvaluationQueryService.class));
+        var service=mock(TransactionService.class);var controller=new IngressController(limits,service,mock(za.co.sibusiso.fraud.evaluation.application.EvaluationQueryService.class));
         var caller=new Caller("producer","scope",Set.of(Caller.Role.READ),Set.of(),1);
         assertThatThrownBy(()->controller.get("four",caller,new MockHttpServletRequest())).isInstanceOf(ApiFailure.class);
         verifyNoInteractions(service);

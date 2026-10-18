@@ -1,9 +1,9 @@
 package za.co.sibusiso.fraud.policy;
 
 import java.util.concurrent.atomic.AtomicReference;
-import za.co.sibusiso.fraud.configuration.PolicyLoader;
-import za.co.sibusiso.fraud.configuration.PolicySnapshot;
 import za.co.sibusiso.fraud.domain.ContractChecks;
+import za.co.sibusiso.fraud.policy.definition.PolicyLoader;
+import za.co.sibusiso.fraud.policy.definition.PolicySnapshot;
 
 public final class ActivePolicyProvider {
     private record Cached(long revision, PolicySnapshot policy) { }

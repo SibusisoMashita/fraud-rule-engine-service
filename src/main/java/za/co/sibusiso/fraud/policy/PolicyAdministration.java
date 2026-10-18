@@ -7,16 +7,16 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
-import za.co.sibusiso.fraud.configuration.PolicyLoader;
 import za.co.sibusiso.fraud.configuration.StrictYaml;
 import za.co.sibusiso.fraud.domain.ContractChecks;
+import za.co.sibusiso.fraud.policy.definition.PolicyLoader;
 
 @Configuration
 @Profile("policy-admin")
 public class PolicyAdministration {
     @Bean
     CommandLineRunner administerPolicy(JdbcTemplate jdbc, PolicyLoader loader, StrictYaml yaml, Environment environment,
-            ConfigurableApplicationContext context, za.co.sibusiso.fraud.evaluation.RuleEngine engine) {
+            ConfigurableApplicationContext context, za.co.sibusiso.fraud.evaluation.rules.RuleEngine engine) {
         return args -> {
             String command = environment.getRequiredProperty("fraud.policy-command");
             ContractChecks.require(command.equals("seed") || command.equals("activate"), "Unknown policy command");

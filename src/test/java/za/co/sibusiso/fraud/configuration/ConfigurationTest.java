@@ -8,11 +8,18 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.core.io.ClassPathResource;
 import za.co.sibusiso.fraud.domain.RuleId;
+import za.co.sibusiso.fraud.policy.PolicyConfiguration;
+import za.co.sibusiso.fraud.policy.definition.BuiltInRuleSettings;
+import za.co.sibusiso.fraud.policy.definition.BuiltInRules;
+import za.co.sibusiso.fraud.policy.definition.PolicyLoader;
+import za.co.sibusiso.fraud.policy.definition.RuleDefinition;
+import za.co.sibusiso.fraud.policy.definition.RuleRegistry;
+import za.co.sibusiso.fraud.policy.definition.RuleSettings;
 
 import static org.assertj.core.api.Assertions.*;
 

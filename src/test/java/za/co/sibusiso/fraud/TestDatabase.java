@@ -4,6 +4,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import org.flywaydb.core.Flyway;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 public final class TestDatabase {
@@ -28,9 +29,9 @@ public final class TestDatabase {
         var yaml = new za.co.sibusiso.fraud.configuration.StrictYaml();
         var resource = new org.springframework.core.io.ClassPathResource("config/policy.example.yaml");
         String policyText = yaml.readText(resource);
-        var loader = new za.co.sibusiso.fraud.configuration.PolicyLoader(yaml,
-                za.co.sibusiso.fraud.configuration.RuleRegistry.of(
-                        za.co.sibusiso.fraud.configuration.BuiltInRules.definitions(), 64));
+        var loader = new za.co.sibusiso.fraud.policy.definition.PolicyLoader(yaml,
+                za.co.sibusiso.fraud.policy.definition.RuleRegistry.of(
+                        za.co.sibusiso.fraud.policy.definition.BuiltInRules.definitions(), 64));
         try (var connection = DriverManager.getConnection(DATABASE.getJdbcUrl(), "fraud_policy_admin", PASSWORD);
                 var statement = connection.prepareStatement("SELECT fraud.activate_policy(?, ?, true)")) {
             statement.setString(1, loader.read(policyText).policyHash());

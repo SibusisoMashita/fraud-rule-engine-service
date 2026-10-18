@@ -26,8 +26,17 @@ import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import za.co.sibusiso.fraud.configuration.*;
-import za.co.sibusiso.fraud.evaluation.*;
+import za.co.sibusiso.fraud.evaluation.persistence.JdbcTransactionStore;
+import za.co.sibusiso.fraud.evaluation.rules.CumulativeSpendRule;
+import za.co.sibusiso.fraud.evaluation.rules.HighAmountRule;
+import za.co.sibusiso.fraud.evaluation.rules.ImpossibleTravelRule;
+import za.co.sibusiso.fraud.evaluation.rules.RuleEngine;
+import za.co.sibusiso.fraud.evaluation.rules.SmallPaymentBurstRule;
+import za.co.sibusiso.fraud.evaluation.rules.TransactionVelocityRule;
 import za.co.sibusiso.fraud.ingress.security.CredentialAuthenticator;
+import za.co.sibusiso.fraud.policy.definition.BuiltInRules;
+import za.co.sibusiso.fraud.policy.definition.PolicyLoader;
+import za.co.sibusiso.fraud.policy.definition.RuleRegistry;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;

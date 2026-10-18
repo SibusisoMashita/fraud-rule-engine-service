@@ -3,6 +3,10 @@ package za.co.sibusiso.fraud.configuration;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import za.co.sibusiso.fraud.policy.definition.BuiltInRules;
+import za.co.sibusiso.fraud.policy.definition.PolicyLoader;
+import za.co.sibusiso.fraud.policy.definition.RuleDefinition;
+import za.co.sibusiso.fraud.policy.definition.RuleRegistry;
 
 import static org.assertj.core.api.Assertions.*;
 

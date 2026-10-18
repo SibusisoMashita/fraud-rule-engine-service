@@ -9,7 +9,7 @@ import za.co.sibusiso.fraud.contracts.ErrorCode;
 import za.co.sibusiso.fraud.domain.ContractChecks;
 import za.co.sibusiso.fraud.domain.EvaluationOutcome.Decision;
 import za.co.sibusiso.fraud.domain.EventTime;
-import za.co.sibusiso.fraud.evaluation.EvaluationQuery;
+import za.co.sibusiso.fraud.evaluation.application.EvaluationQuery;
 import za.co.sibusiso.fraud.ingress.error.ApiFailure;
 
 public final class EvaluationQueryDecoder {

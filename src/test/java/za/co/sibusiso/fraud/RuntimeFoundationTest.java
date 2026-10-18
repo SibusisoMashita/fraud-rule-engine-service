@@ -18,9 +18,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -266,8 +266,8 @@ class RuntimeFoundationTest {
     }
 
     private static String policyHash(String text) {
-        return new za.co.sibusiso.fraud.configuration.PolicyLoader(new za.co.sibusiso.fraud.configuration.StrictYaml(),
-                za.co.sibusiso.fraud.configuration.RuleRegistry.of(za.co.sibusiso.fraud.configuration.BuiltInRules.definitions(), 64))
+        return new za.co.sibusiso.fraud.policy.definition.PolicyLoader(new za.co.sibusiso.fraud.configuration.StrictYaml(),
+                za.co.sibusiso.fraud.policy.definition.RuleRegistry.of(za.co.sibusiso.fraud.policy.definition.BuiltInRules.definitions(), 64))
                 .read(text).policyHash();
     }
 

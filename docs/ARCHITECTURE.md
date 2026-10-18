@@ -4,9 +4,22 @@ The service is a Java modular monolith backed by PostgreSQL and Redis. All five 
 
 ## Application boundaries
 
-HTTP controllers and their exception advice live in `ingress`: `IngressController` handles the API and `HealthController` handles probes. Subpackages group request decoding and deadlines (`ingress.request`), authentication and shared quotas (`ingress.security`), and HTTP problem responses (`ingress.error`). The API adapters authenticate callers, validate requests and enforce quotas. Application services coordinate use cases and transactions. Pure domain rules evaluate immutable facts without making network or database calls. Infrastructure adapters handle SQL, policy loading and Redis. Repository interfaces describe specific persistence operations.
+HTTP controllers, their exception advice and documentation setup live in `ingress`: `IngressController` handles the API and `HealthController` handles probes. Subpackages group request decoding and deadlines (`ingress.request`), authentication, security setup and shared quotas (`ingress.security`), and HTTP problem responses (`ingress.error`). The API adapters authenticate callers, validate requests and enforce quotas. Application services coordinate use cases and transactions. Pure domain rules evaluate immutable facts without making network or database calls. Infrastructure adapters handle SQL, policy loading and Redis. Repository interfaces describe specific persistence operations.
 
-Follow an ingestion request through [IngressController](../src/main/java/za/co/sibusiso/fraud/ingress/IngressController.java), [TransactionService](../src/main/java/za/co/sibusiso/fraud/evaluation/TransactionService.java), [TransactionalEvaluation](../src/main/java/za/co/sibusiso/fraud/evaluation/TransactionalEvaluation.java) and [RuleEngine](../src/main/java/za/co/sibusiso/fraud/evaluation/RuleEngine.java).
+Startup limits and strict YAML parsing live in `configuration`. Business policy settings, typed rule definitions and validation live in `policy.definition`; `policy` manages activation and reads the active database version.
+
+The `evaluation` package groups related responsibilities:
+
+| Package | Responsibility |
+| --- | --- |
+| `application` | Transaction and query workflows, their storage contracts, pagination and work budgets |
+| `rules` | The rule contract, engine, five implementations and distance calculation |
+| `history` | Typed history requirements and immutable facts passed to rules |
+| `persistence` | JDBC adapters and the shared stored-evaluation SQL representation |
+
+Evaluation wiring, build identity and the shared flow failure remain at the package root. Application workflows depend on storage interfaces; JDBC adapters implement them. Rule calculations use supplied facts without database access.
+
+Follow an ingestion request through [IngressController](../src/main/java/za/co/sibusiso/fraud/ingress/IngressController.java), [TransactionService](../src/main/java/za/co/sibusiso/fraud/evaluation/application/TransactionService.java), [TransactionalEvaluation](../src/main/java/za/co/sibusiso/fraud/evaluation/application/TransactionalEvaluation.java) and [RuleEngine](../src/main/java/za/co/sibusiso/fraud/evaluation/rules/RuleEngine.java).
 
 Spring JDBC keeps scoped queries, aggregates and row locks explicit. One HikariCP DataSource and JdbcTransactionManager coordinate writes. PostgreSQL owns transactions, evaluations, identities and policy; Redis holds abuse quotas. There is no broker or external event publication in v1, so no outbox is needed.
 

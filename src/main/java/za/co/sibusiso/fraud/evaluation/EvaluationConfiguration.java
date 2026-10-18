@@ -4,6 +4,13 @@ import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import za.co.sibusiso.fraud.evaluation.rules.CumulativeSpendRule;
+import za.co.sibusiso.fraud.evaluation.rules.FraudRule;
+import za.co.sibusiso.fraud.evaluation.rules.HighAmountRule;
+import za.co.sibusiso.fraud.evaluation.rules.ImpossibleTravelRule;
+import za.co.sibusiso.fraud.evaluation.rules.RuleEngine;
+import za.co.sibusiso.fraud.evaluation.rules.SmallPaymentBurstRule;
+import za.co.sibusiso.fraud.evaluation.rules.TransactionVelocityRule;
 
 @Configuration
 @Profile("!migrate")

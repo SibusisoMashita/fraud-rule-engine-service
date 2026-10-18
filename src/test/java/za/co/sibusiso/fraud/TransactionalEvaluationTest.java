@@ -30,13 +30,21 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import za.co.sibusiso.fraud.configuration.*;
 import za.co.sibusiso.fraud.domain.TransactionEvent;
-import za.co.sibusiso.fraud.evaluation.*;
+import za.co.sibusiso.fraud.evaluation.FlowFailure;
+import za.co.sibusiso.fraud.evaluation.application.EvaluationWriter;
+import za.co.sibusiso.fraud.evaluation.application.TransactionService;
+import za.co.sibusiso.fraud.evaluation.persistence.JdbcTransactionStore;
+import za.co.sibusiso.fraud.evaluation.rules.HighAmountRule;
+import za.co.sibusiso.fraud.evaluation.rules.ImpossibleTravelRule;
+import za.co.sibusiso.fraud.evaluation.rules.RuleEngine;
 import za.co.sibusiso.fraud.ingress.request.TransactionDecoder;
 import za.co.sibusiso.fraud.ingress.security.CredentialAuthenticator;
+import za.co.sibusiso.fraud.policy.definition.BuiltInRules;
+import za.co.sibusiso.fraud.policy.definition.PolicyLoader;
+import za.co.sibusiso.fraud.policy.definition.RuleRegistry;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -365,7 +373,7 @@ class TransactionalEvaluationTest {
     }
     private String activate(String source) {
         var yaml=new StrictYaml();var snapshot=new PolicyLoader(yaml,RuleRegistry.of(BuiltInRules.definitions(),limits.api().maxRegisteredRules())).read(source);
-        new RuleEngine(List.of(new HighAmountRule(), new za.co.sibusiso.fraud.evaluation.TransactionVelocityRule(), new za.co.sibusiso.fraud.evaluation.CumulativeSpendRule(), new za.co.sibusiso.fraud.evaluation.SmallPaymentBurstRule(), new ImpossibleTravelRule(limits.api().maxLocationCandidatesPerEvaluation())), limits.api().maxEvidenceFactsPerRule()).verify(snapshot);
+        new RuleEngine(List.of(new HighAmountRule(), new za.co.sibusiso.fraud.evaluation.rules.TransactionVelocityRule(), new za.co.sibusiso.fraud.evaluation.rules.CumulativeSpendRule(), new za.co.sibusiso.fraud.evaluation.rules.SmallPaymentBurstRule(), new ImpossibleTravelRule(limits.api().maxLocationCandidatesPerEvaluation())), limits.api().maxEvidenceFactsPerRule()).verify(snapshot);
         return database("fraud_policy_admin").queryForObject("SELECT fraud.activate_policy(?,?,false)",String.class,snapshot.policyHash(),source);
     }
     private void assertCounts(Identity who,int events,int instruments) {

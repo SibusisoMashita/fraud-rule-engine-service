@@ -10,12 +10,15 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import za.co.sibusiso.fraud.configuration.*;
+import za.co.sibusiso.fraud.policy.definition.BuiltInRules;
+import za.co.sibusiso.fraud.policy.definition.PolicyLoader;
+import za.co.sibusiso.fraud.policy.definition.RuleRegistry;
 
 import static org.assertj.core.api.Assertions.*;
 
 class ActivePolicyProviderTest {
-    private final za.co.sibusiso.fraud.evaluation.RuleEngine engine = new za.co.sibusiso.fraud.evaluation.RuleEngine(
-            java.util.List.of(new za.co.sibusiso.fraud.evaluation.HighAmountRule(), new za.co.sibusiso.fraud.evaluation.TransactionVelocityRule(), new za.co.sibusiso.fraud.evaluation.CumulativeSpendRule(),new za.co.sibusiso.fraud.evaluation.SmallPaymentBurstRule(), new za.co.sibusiso.fraud.evaluation.ImpossibleTravelRule(new StrictYaml().read(new ClassPathResource("config/service.example.yaml"), ServiceLimits.class).api().maxLocationCandidatesPerEvaluation())),
+    private final za.co.sibusiso.fraud.evaluation.rules.RuleEngine engine = new za.co.sibusiso.fraud.evaluation.rules.RuleEngine(
+            java.util.List.of(new za.co.sibusiso.fraud.evaluation.rules.HighAmountRule(), new za.co.sibusiso.fraud.evaluation.rules.TransactionVelocityRule(), new za.co.sibusiso.fraud.evaluation.rules.CumulativeSpendRule(),new za.co.sibusiso.fraud.evaluation.rules.SmallPaymentBurstRule(), new za.co.sibusiso.fraud.evaluation.rules.ImpossibleTravelRule(new StrictYaml().read(new ClassPathResource("config/service.example.yaml"), ServiceLimits.class).api().maxLocationCandidatesPerEvaluation())),
             new StrictYaml().read(new ClassPathResource("config/service.example.yaml"), ServiceLimits.class).api().maxEvidenceFactsPerRule());
     private final StrictYaml yaml = new StrictYaml();
     private final PolicyLoader loader = new PolicyLoader(yaml, RuleRegistry.of(BuiltInRules.definitions(), 64));
