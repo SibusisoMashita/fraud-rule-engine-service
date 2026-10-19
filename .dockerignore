@@ -11,3 +11,8 @@
 !config/service.example.yaml
 !api/
 !api/openapi.yaml
+!certs/
+!certs/*.crt
+!certs/*.pem
+!docker/
+!docker/import-extra-certs.sh

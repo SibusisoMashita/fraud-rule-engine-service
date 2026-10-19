@@ -1,5 +1,9 @@
 FROM eclipse-temurin:21-jdk@sha256:f9bf7e9fe2f9bc4657537c1a7e20c768f0c3bafca41598263be4714783dd62eb AS build
 WORKDIR /build
+# Optional organisation CAs are trusted only by the build-stage JDK.
+COPY certs /tmp/extra-certs
+COPY docker/import-extra-certs.sh /tmp/import-extra-certs.sh
+RUN /tmp/import-extra-certs.sh /tmp/extra-certs
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
 RUN ./mvnw -B -ntp dependency:go-offline

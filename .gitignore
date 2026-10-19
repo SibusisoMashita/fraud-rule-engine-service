@@ -18,3 +18,7 @@ __pycache__/
 /logs/
 /reports/
 *.log
+
+# Organisation CA certificates are local build inputs, not repository assets.
+/certs/*.crt
+/certs/*.pem
