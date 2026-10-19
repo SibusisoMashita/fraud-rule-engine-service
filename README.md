@@ -16,6 +16,8 @@ You need Git, Docker with Compose 2.24.4+, OpenSSL, curl and a POSIX shell (such
 
 On Windows, complete the [WSL2 setup](docs/OPERATIONS.md#windows-with-wsl2) first. All commands below use a POSIX shell; on Windows, run them in the Ubuntu terminal.
 
+On a corporate network that inspects HTTPS (for example Zscaler), do the one-time CA step after cloning and before building. Otherwise, run the commands as they are.
+
 ```sh
 git clone https://github.com/SibusisoMashita/fraud-rule-engine-service.git
 cd fraud-rule-engine-service
@@ -26,6 +28,34 @@ curl --fail http://localhost:8080/health/ready
 ```
 
 Expect `{"status":"UP"}`. Startup creates local credentials, runs migrations and loads the sample policy. Only the API port is published, on loopback; PostgreSQL and Redis stay internal. For port conflicts, startup errors or an existing database, see [Operations](docs/OPERATIONS.md#first-start-and-troubleshooting).
+
+### Corporate networks (TLS inspection)
+
+Skip this step on home/open networks that do not inspect HTTPS. Check the certificate issuer presented for Maven Central:
+
+```sh
+openssl s_client -connect repo.maven.apache.org:443 -servername repo.maven.apache.org </dev/null 2>/dev/null | grep 'i:'
+```
+
+If the issuer identifies your organisation or its inspection service rather than a public CA (such as Amazon, DigiCert or Let's Encrypt), get the approved organisation root CA and export it as PEM into `certs/`. These public CA names are examples, not a complete list; confirm an unfamiliar issuer with IT before trusting it.
+
+For Zscaler on macOS, after cloning and entering the repository:
+
+```sh
+security find-certificate -a -c "Zscaler Root CA" -p > certs/zscaler-root-ca.pem
+```
+
+Other organisations can get the root/intermediate CA from IT or their certificate store. Use `*.crt` or `*.pem` files, then continue the quickstart normally. For an earlier failed build, run `docker compose build --no-cache app` before starting the service.
+
+Certificate files are git-ignored and used only by the build-stage JDK. The runtime image keeps its existing trust settings. See [Optional organisation CA certificates](certs/README.md) for details.
+
+### Retrying after a failed start
+
+If a build fails, rebuild successfully before running `docker compose up --no-build`; otherwise the image may not exist.
+
+This repo explicitly uses the Compose project name `fraud-rule-engine-service`. Separate clones share that project's containers and database volume unless you override the name with `-p` or `COMPOSE_PROJECT_NAME`. Their separately generated secrets can disagree with the existing services, causing `/health/ready` to return 503 or Redis to report `WRONGPASS`.
+
+Run `docker compose down` in the other clone first. This stops its services and preserves its data; when reusing the existing volume, keep the original credentials. For a throwaway local setup, run `docker compose down --volumes`, then repeat the startup commands to start clean. The `--volumes` option deletes that project's local database data. Use a distinct project name, separate image tag and available port when keeping two clones running.
 
 ## Try the API
 
