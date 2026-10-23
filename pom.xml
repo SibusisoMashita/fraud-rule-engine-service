@@ -14,7 +14,7 @@
   <description>Configurable fraud evaluation for categorized transaction events</description>
   <properties>
     <java.version>21</java.version>
-    <google-java-format.version>1.37.0</google-java-format.version>
+    <google-java-format.version>1.36.1</google-java-format.version>
     <!-- Security patches newer than the Boot 4.1.1 managed baseline. -->
     <tomcat.version>11.0.27</tomcat.version>
     <jackson-bom.version>3.1.7</jackson-bom.version>
@@ -108,38 +108,17 @@
         <groupId>com.diffplug.spotless</groupId>
         <artifactId>spotless-maven-plugin</artifactId>
         <version>3.10.4</version>
-        <dependencies>
-          <dependency>
-            <groupId>com.google.googlejavaformat</groupId>
-            <artifactId>google-java-format</artifactId>
-            <version>${google-java-format.version}</version>
-            <classifier>all-deps</classifier>
-          </dependency>
-        </dependencies>
         <configuration>
           <java>
             <includes>
               <include>src/main/java/**/*.java</include>
               <include>src/test/java/**/*.java</include>
             </includes>
-            <!-- GJF 1.37 changed its Style API; the official CLI avoids the older adapter. -->
-            <nativeCmd>
-              <name>google-java-format</name>
-              <pathToExe>${java.home}/bin/java</pathToExe>
-              <arguments>
-                <argument>--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED</argument>
-                <argument>--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED</argument>
-                <argument>--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED</argument>
-                <argument>--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED</argument>
-                <argument>--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED</argument>
-                <argument>--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED</argument>
-                <argument>-jar</argument>
-                <argument>${settings.localRepository}/com/google/googlejavaformat/google-java-format/${google-java-format.version}/google-java-format-${google-java-format.version}-all-deps.jar</argument>
-                <argument>--aosp</argument>
-                <argument>--skip-reflowing-long-strings</argument>
-                <argument>-</argument>
-              </arguments>
-            </nativeCmd>
+            <googleJavaFormat>
+              <version>${google-java-format.version}</version>
+              <style>AOSP</style>
+              <reorderImports>true</reorderImports>
+            </googleJavaFormat>
           </java>
         </configuration>
         <executions>

@@ -12,13 +12,13 @@ Run these commands from the repository root. Java tests need JDK 21 and a runnin
 
 `verify` runs the Java unit, contract and integration tests, packages the application and checks Java formatting. If Testcontainers cannot find your Docker engine, check the [Docker context setup](OPERATIONS.md#testcontainers-docker-context).
 
-Production and test Java use pinned Spotless and google-java-format versions with the four-space AOSP style. To format your changes before verification:
+Production and test Java use Spotless 3.10.4 and google-java-format 1.36.1 with the four-space AOSP style. To format your changes before verification:
 
 ```sh
 ./mvnw -B -ntp spotless:apply
 ```
 
-Spotless invokes the official formatter CLI because these pinned versions have incompatible Java APIs. Maven downloads the formatter automatically; no separate installation is needed.
+The formatter is pinned to the version supported by the Spotless adapter. Maven downloads it automatically; no separate installation is needed.
 
 To check the built Docker image and the complete local lifecycle:
 
