@@ -21,6 +21,7 @@ import za.co.sibusiso.fraud.contracts.ErrorCode;
 import za.co.sibusiso.fraud.domain.Money;
 import za.co.sibusiso.fraud.domain.TransactionEvent;
 import za.co.sibusiso.fraud.evaluation.FlowFailure;
+import za.co.sibusiso.fraud.evaluation.rules.RuleEvaluationException;
 import za.co.sibusiso.fraud.ingress.security.Caller;
 import za.co.sibusiso.fraud.policy.PolicyUnavailableException;
 
@@ -53,7 +54,7 @@ class ServiceFailureCauseTest {
     @ParameterizedTest
     @MethodSource("writeFailures")
     void transactionMappingRetainsTheOriginalCauseAndAcceptanceOutcome(
-            RuntimeException original,
+            Exception original,
             boolean commitReady,
             HttpStatus status,
             ErrorCode code,
@@ -63,7 +64,9 @@ class ServiceFailureCauseTest {
         EvaluationWriter writer =
                 (caller, event, hash, remaining, attempt) -> {
                     if (commitReady) attempt.readyToCommit();
-                    throw original;
+                    if (original instanceof RuleEvaluationException checked) throw checked;
+                    if (original instanceof RuntimeException unchecked) throw unchecked;
+                    throw new AssertionError("Unsupported test failure type", original);
                 };
         var service = new TransactionService(store, writer);
         assertThatThrownBy(() -> service.submit(CALLER, EVENT, () -> 1000))
@@ -74,6 +77,10 @@ class ServiceFailureCauseTest {
                             assertThat(failure.status()).isEqualTo(status);
                             assertThat(failure.code()).isEqualTo(code.name());
                             assertThat(failure.unknown()).isEqualTo(unknown);
+                            if (original instanceof RuleEvaluationException checked) {
+                                assertThat(failure.getCause().getCause())
+                                        .isSameAs(checked.getCause());
+                            }
                         });
     }
 
@@ -104,6 +111,12 @@ class ServiceFailureCauseTest {
                         ErrorCode.DEPENDENCY_UNAVAILABLE,
                         false),
                 Arguments.of(
+                        new RuleEvaluationException(new Exception("private checked rule detail")),
+                        false,
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        ErrorCode.EVALUATION_FAILED,
+                        false),
+                Arguments.of(
                         new IllegalStateException("private rule detail"),
                         false,
                         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -116,7 +129,25 @@ class ServiceFailureCauseTest {
                         ErrorCode.CONCURRENT_WRITE_RETRY,
                         false),
                 Arguments.of(
+                        new RuleEvaluationException(new Exception("private checked rule detail")),
+                        true,
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        ErrorCode.COMMIT_OUTCOME_UNKNOWN,
+                        true),
+                Arguments.of(
                         new IllegalStateException("private rule detail"),
+                        true,
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        ErrorCode.COMMIT_OUTCOME_UNKNOWN,
+                        true),
+                Arguments.of(
+                        new DataAccessResourceFailureException("private database detail"),
+                        true,
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        ErrorCode.COMMIT_OUTCOME_UNKNOWN,
+                        true),
+                Arguments.of(
+                        new TransactionSystemException("private transaction detail"),
                         true,
                         HttpStatus.SERVICE_UNAVAILABLE,
                         ErrorCode.COMMIT_OUTCOME_UNKNOWN,

@@ -1,6 +1,7 @@
 package za.co.sibusiso.fraud.evaluation.application;
 
 import za.co.sibusiso.fraud.domain.TransactionEvent;
+import za.co.sibusiso.fraud.evaluation.rules.RuleEvaluationException;
 import za.co.sibusiso.fraud.ingress.security.Caller;
 
 import java.util.function.LongSupplier;
@@ -26,5 +27,5 @@ public interface EvaluationWriter {
             String requestHash,
             LongSupplier remainingMillis,
             Attempt attempt)
-            throws Exception;
+            throws RuleEvaluationException;
 }

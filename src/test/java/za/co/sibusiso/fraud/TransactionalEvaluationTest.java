@@ -36,6 +36,7 @@ import za.co.sibusiso.fraud.evaluation.persistence.JdbcTransactionStore;
 import za.co.sibusiso.fraud.evaluation.rules.HighAmountRule;
 import za.co.sibusiso.fraud.evaluation.rules.ImpossibleTravelRule;
 import za.co.sibusiso.fraud.evaluation.rules.RuleEngine;
+import za.co.sibusiso.fraud.evaluation.rules.RuleEvaluationException;
 import za.co.sibusiso.fraud.ingress.request.TransactionDecoder;
 import za.co.sibusiso.fraud.ingress.security.CredentialAuthenticator;
 import za.co.sibusiso.fraud.policy.ActivePolicyProvider;
@@ -449,10 +450,10 @@ class TransactionalEvaluationTest {
 
     @Test
     void checkedAndUncheckedRuleFailuresRollBackAllPartialWrites() throws Exception {
+        var checkedCause = new Exception("synthetic checked failure");
+        var checkedFailure = new RuleEvaluationException(checkedCause);
         for (Exception failure :
-                List.of(
-                        new Exception("synthetic checked failure"),
-                        new IllegalStateException("synthetic rule failure"))) {
+                List.of(checkedFailure, new IllegalStateException("synthetic rule failure"))) {
             var who = identity();
             String input = body("failed", "customer", "card", "1.00");
             doThrow(failure).when(high).evaluate(any(), any(), any());
@@ -460,6 +461,28 @@ class TransactionalEvaluationTest {
             assertThat(result.statusCode()).as(result.body()).isEqualTo(500);
             assertThat(json.readTree(result.body()).get("outcome").asString())
                     .isEqualTo("NOT_ACCEPTED");
+            assertThat(result.body())
+                    .doesNotContain("synthetic checked failure", "synthetic rule failure");
+            assertThatThrownBy(
+                            () ->
+                                    service.submit(
+                                            credentials.authenticate(who.key()),
+                                            decode(input),
+                                            () -> (long) limits.api().businessDeadlineMillis()))
+                    .isInstanceOfSatisfying(
+                            FlowFailure.class,
+                            mapped -> {
+                                assertThat(mapped.status())
+                                        .isEqualTo(
+                                                org.springframework.http.HttpStatus
+                                                        .INTERNAL_SERVER_ERROR);
+                                assertThat(mapped.code()).isEqualTo("EVALUATION_FAILED");
+                                assertThat(mapped.unknown()).isFalse();
+                                assertThat(mapped.getCause()).isSameAs(failure);
+                                if (failure == checkedFailure) {
+                                    assertThat(mapped.getCause().getCause()).isSameAs(checkedCause);
+                                }
+                            });
             assertCounts(who, 0, 0);
             assertThat(
                             observer()
@@ -616,13 +639,15 @@ class TransactionalEvaluationTest {
         var who = identity();
         var caller = credentials.authenticate(who.key());
         var event = decode(body("unknown", "customer", "card", "1.00"));
+        var lostAcknowledgement =
+                new DataAccessResourceFailureException(
+                        "Synthetic acknowledgement loss after real proxy commit");
         var uncertain =
                 new TransactionService(
                         store,
                         (actor, transaction, hash, budget, attempt) -> {
                             writer.write(actor, transaction, hash, budget, attempt);
-                            throw new DataAccessResourceFailureException(
-                                    "Synthetic acknowledgement loss after real proxy commit");
+                            throw lostAcknowledgement;
                         });
         assertThatThrownBy(
                         () ->
@@ -635,6 +660,7 @@ class TransactionalEvaluationTest {
                         e -> {
                             assertThat(e.unknown()).isTrue();
                             assertThat(e.code()).isEqualTo("COMMIT_OUTCOME_UNKNOWN");
+                            assertThat(e.getCause()).isSameAs(lostAcknowledgement);
                         });
         assertCounts(who, 1, 1);
         var recovered =
@@ -802,12 +828,14 @@ class TransactionalEvaluationTest {
     void uncertainTransactionCleanupCannotClaimConfirmedNonacceptance() throws Exception {
         var who = identity();
         var event = decode(body("cleanup", "customer", "card", "1.00"));
+        var cleanupFailure =
+                new org.springframework.transaction.TransactionSystemException(
+                        "Synthetic uncertain rollback");
         var uncertain =
                 new TransactionService(
                         store,
                         (actor, transaction, hash, budget, attempt) -> {
-                            throw new org.springframework.transaction.TransactionSystemException(
-                                    "Synthetic uncertain rollback");
+                            throw cleanupFailure;
                         });
         assertThatThrownBy(
                         () ->
@@ -820,6 +848,7 @@ class TransactionalEvaluationTest {
                         failure -> {
                             assertThat(failure.unknown()).isTrue();
                             assertThat(failure.code()).isEqualTo("TRANSACTION_OUTCOME_UNKNOWN");
+                            assertThat(failure.getCause()).isSameAs(cleanupFailure);
                         });
     }
 

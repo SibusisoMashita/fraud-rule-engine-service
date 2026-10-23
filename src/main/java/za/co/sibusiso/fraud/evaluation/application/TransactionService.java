@@ -13,6 +13,7 @@ import za.co.sibusiso.fraud.contracts.ErrorCode;
 import za.co.sibusiso.fraud.domain.ContractChecks;
 import za.co.sibusiso.fraud.domain.TransactionEvent;
 import za.co.sibusiso.fraud.evaluation.FlowFailure;
+import za.co.sibusiso.fraud.evaluation.rules.RuleEvaluationException;
 import za.co.sibusiso.fraud.ingress.security.Caller;
 import za.co.sibusiso.fraud.policy.PolicyUnavailableException;
 
@@ -69,7 +70,7 @@ public class TransactionService {
                         ErrorCode.DEPENDENCY_UNAVAILABLE,
                         unavailable);
             }
-        } catch (Exception failure) {
+        } catch (RuleEvaluationException | RuntimeException failure) {
             if (attempt.isCommitReady())
                 throw new FlowFailure(
                         HttpStatus.SERVICE_UNAVAILABLE,

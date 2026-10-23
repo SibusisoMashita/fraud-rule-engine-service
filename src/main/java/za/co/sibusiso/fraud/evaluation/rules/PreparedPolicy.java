@@ -35,7 +35,8 @@ public final class PreparedPolicy {
             return rule.smallPaymentsQuery(event, settings);
         }
 
-        RuleResult evaluate(TransactionEvent event, FraudRule.Context context) throws Exception {
+        RuleResult evaluate(TransactionEvent event, FraudRule.Context context)
+                throws RuleEvaluationException {
             return rule.evaluate(event, settings, context);
         }
     }
@@ -73,7 +74,7 @@ public final class PreparedPolicy {
 
     public EvaluationOutcome evaluate(
             TransactionEvent event, FraudRule.Context context, ServiceLimits.Api limits)
-            throws Exception {
+            throws RuleEvaluationException {
         var results = new ArrayList<RuleResult>();
         for (var configured : snapshot.rules().values()) {
             var definition = configured.definition();

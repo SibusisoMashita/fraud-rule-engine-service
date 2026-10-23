@@ -24,7 +24,7 @@ public final class HighAmountRule implements FraudRule<HighAmount> {
 
     @Override
     public RuleResult evaluate(TransactionEvent event, HighAmount settings, Context context)
-            throws Exception {
+            throws RuleEvaluationException {
         BigDecimal threshold = settings.thresholds().get(event.money().currency()).value();
         boolean match = event.money().amount().compareTo(threshold) > 0;
         return new RuleResult(

@@ -39,5 +39,6 @@ public interface FraudRule<C extends RuleSettings> {
         return Set.of();
     }
 
-    RuleResult evaluate(TransactionEvent event, C settings, Context context) throws Exception;
+    RuleResult evaluate(TransactionEvent event, C settings, Context context)
+            throws RuleEvaluationException;
 }
