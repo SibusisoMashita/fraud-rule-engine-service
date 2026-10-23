@@ -14,6 +14,6 @@ public class PolicyRuntimeConfiguration {
             ActivePolicyStore store,
             PolicyLoader loader,
             za.co.sibusiso.fraud.evaluation.rules.RuleEngine engine) {
-        return new ActivePolicyProvider(store, loader, engine::verify);
+        return new ActivePolicyProvider(store, loader, engine::prepare);
     }
 }

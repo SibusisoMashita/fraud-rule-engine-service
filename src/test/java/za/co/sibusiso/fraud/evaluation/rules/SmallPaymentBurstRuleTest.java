@@ -132,10 +132,10 @@ class SmallPaymentBurstRuleTest {
                         source.replace(
                                 "smallPaymentBurstThenLarge:\n    enabled: true",
                                 "smallPaymentBurstThenLarge:\n    enabled: false"));
-        assertThat(engine.smallPaymentsQueries(event("6000.00"), policy)).isEmpty();
+        assertThat(engine.prepare(policy).smallPaymentsQueries(event("6000.00"))).isEmpty();
         var result =
-                engine.evaluate(
-                        event("6000.00"), policy, new FraudRule.Context(now, 0), limits.api());
+                engine.prepare(policy)
+                        .evaluate(event("6000.00"), new FraudRule.Context(now, 0), limits.api());
         assertThat(result.ruleResults())
                 .filteredOn(r -> r.ruleId().equals(rule.definition().id()))
                 .singleElement()

@@ -20,10 +20,9 @@ import za.co.sibusiso.fraud.evaluation.history.LocationQuery;
 import za.co.sibusiso.fraud.evaluation.history.SmallPaymentsHistory;
 import za.co.sibusiso.fraud.evaluation.history.SmallPaymentsQuery;
 import za.co.sibusiso.fraud.evaluation.rules.FraudRule;
-import za.co.sibusiso.fraud.evaluation.rules.RuleEngine;
+import za.co.sibusiso.fraud.evaluation.rules.PreparedPolicy;
 import za.co.sibusiso.fraud.ingress.security.Caller;
 import za.co.sibusiso.fraud.policy.ActivePolicyProvider;
-import za.co.sibusiso.fraud.policy.definition.PolicySnapshot;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -38,19 +37,16 @@ import java.util.function.Supplier;
 public class TransactionalEvaluation implements EvaluationWriter {
     private final TransactionStore store;
     private final ActivePolicyProvider policies;
-    private final RuleEngine engine;
     private final ServiceLimits limits;
     private final EvaluatorBuild build;
 
     public TransactionalEvaluation(
             TransactionStore store,
             ActivePolicyProvider policies,
-            RuleEngine engine,
             ServiceLimits limits,
             EvaluatorBuild build) {
         this.store = store;
         this.policies = policies;
-        this.engine = engine;
         this.limits = limits;
         this.build = build;
     }
@@ -88,8 +84,9 @@ public class TransactionalEvaluation implements EvaluationWriter {
         }
         Instant wallTime = EventTime.validate(sql(budget, store::databaseTime));
         Instant acceptedAt = acceptanceTime(wallTime, state);
-        var policy = sql(budget, policies::current);
-        var eligibility = policy.ingest().checkNewEvent(event, policy.currencies(), wallTime);
+        var policy = sql(budget, policies::prepared);
+        var snapshot = policy.snapshot();
+        var eligibility = snapshot.ingest().checkNewEvent(event, snapshot.currencies(), wallTime);
         if (eligibility != TransactionEligibility.ELIGIBLE) {
             throw new FlowFailure(HttpStatus.UNPROCESSABLE_CONTENT, eligibility.name());
         }
@@ -98,7 +95,7 @@ public class TransactionalEvaluation implements EvaluationWriter {
         change(budget, () -> store.insertEvent(caller, event, hash, acceptedAt, sequence));
         var history = loadHistory(caller, event, policy, acceptedAt, state.sequence(), budget);
         var context = new FraudRule.Context(acceptedAt, state.sequence(), history);
-        var outcome = engine.evaluate(event, policy, context, limits.api());
+        var outcome = policy.evaluate(event, context, limits.api());
         budget.remaining();
 
         Instant evaluated = sql(budget, store::databaseTime);
@@ -110,7 +107,7 @@ public class TransactionalEvaluation implements EvaluationWriter {
                                 caller.scope(),
                                 event.eventId(),
                                 UUID.randomUUID(),
-                                policy.policyHash(),
+                                snapshot.policyHash(),
                                 build.id(),
                                 state.sequence(),
                                 evaluatedAt,
@@ -139,12 +136,12 @@ public class TransactionalEvaluation implements EvaluationWriter {
     private HistoryFacts loadHistory(
             Caller caller,
             TransactionEvent event,
-            PolicySnapshot policy,
+            PreparedPolicy policy,
             Instant acceptedAt,
             long highWatermark,
             WorkBudget budget) {
         var facts = new LinkedHashMap<HistoryQuery, BigDecimal>();
-        for (var query : engine.historyQueries(event, policy)) {
+        for (var query : policy.historyQueries(event)) {
             facts.put(
                     query,
                     sql(
@@ -158,7 +155,7 @@ public class TransactionalEvaluation implements EvaluationWriter {
                                             highWatermark)));
         }
         var locations = new LinkedHashMap<LocationQuery, LocationCandidates>();
-        for (var query : engine.locationQueries(event, policy)) {
+        for (var query : policy.locationQueries(event)) {
             locations.put(
                     query,
                     sql(
@@ -171,7 +168,7 @@ public class TransactionalEvaluation implements EvaluationWriter {
                                             highWatermark)));
         }
         var smallPayments = new LinkedHashMap<SmallPaymentsQuery, SmallPaymentsHistory>();
-        for (var query : engine.smallPaymentsQueries(event, policy)) {
+        for (var query : policy.smallPaymentsQueries(event)) {
             smallPayments.put(
                     query,
                     sql(

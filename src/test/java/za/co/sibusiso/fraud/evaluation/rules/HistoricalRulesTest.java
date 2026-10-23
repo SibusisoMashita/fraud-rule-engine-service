@@ -120,26 +120,28 @@ class HistoricalRulesTest {
                                 new CumulativeSpendRule()),
                         limits.api().maxEvidenceFactsPerRule());
         assertThat(
-                        engine.historyQueries(
-                                event,
-                                loader.read(
-                                        source.replace("windowSeconds: 600", "windowSeconds: 37")
-                                                .replace(
-                                                        "windowSeconds: 1800",
-                                                        "windowSeconds: 59"))))
+                        engine.prepare(
+                                        loader.read(
+                                                source.replace(
+                                                                "windowSeconds: 600",
+                                                                "windowSeconds: 37")
+                                                        .replace(
+                                                                "windowSeconds: 1800",
+                                                                "windowSeconds: 59")))
+                                .historyQueries(event))
                 .containsExactlyInAnyOrder(
                         new HistoryQuery.Count(37), new HistoryQuery.Spend(59, "USD"));
         String velocityOff =
                 source.replace(
                         "transactionVelocity:\n    enabled: true",
                         "transactionVelocity:\n    enabled: false");
-        assertThat(engine.historyQueries(event, loader.read(velocityOff)))
+        assertThat(engine.prepare(loader.read(velocityOff)).historyQueries(event))
                 .containsExactly(new HistoryQuery.Spend(1800, "USD"));
         String bothOff =
                 velocityOff.replace(
                         "cumulativeSpend:\n    enabled: true",
                         "cumulativeSpend:\n    enabled: false");
-        assertThat(engine.historyQueries(event, loader.read(bothOff))).isEmpty();
+        assertThat(engine.prepare(loader.read(bothOff)).historyQueries(event)).isEmpty();
     }
 
     @Test

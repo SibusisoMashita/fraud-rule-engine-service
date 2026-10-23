@@ -64,11 +64,11 @@ class RuleEngineTest {
                 new RuleEngine(
                         List.of(new HighAmountRule()), limits.api().maxEvidenceFactsPerRule());
         var outcome =
-                engine.evaluate(
-                        event(amount),
-                        policy,
-                        new FraudRule.Context(Instant.now(), 0),
-                        limits.api());
+                engine.prepare(policy)
+                        .evaluate(
+                                event(amount),
+                                new FraudRule.Context(Instant.now(), 0),
+                                limits.api());
         assertThat(outcome.decision().name()).isEqualTo(decision);
         assertThat(outcome.coverage()).isEqualTo(EvaluationOutcome.Coverage.COMPLETE);
         var high =
@@ -128,9 +128,9 @@ class RuleEngineTest {
                                                             + "  testRule: {enabled: true, marker: configured}\n");
                             var outcome =
                                     context.getBean(RuleEngine.class)
+                                            .prepare(policy)
                                             .evaluate(
                                                     event("10.01"),
-                                                    policy,
                                                     new FraudRule.Context(Instant.now(), 0),
                                                     limits.api());
                             assertThat(outcome.ruleResults()).hasSize(6);

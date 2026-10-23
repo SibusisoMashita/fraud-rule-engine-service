@@ -31,12 +31,15 @@ import za.co.sibusiso.fraud.domain.TransactionEvent;
 import za.co.sibusiso.fraud.evaluation.FlowFailure;
 import za.co.sibusiso.fraud.evaluation.application.EvaluationWriter;
 import za.co.sibusiso.fraud.evaluation.application.TransactionService;
+import za.co.sibusiso.fraud.evaluation.history.HistoryQuery;
 import za.co.sibusiso.fraud.evaluation.persistence.JdbcTransactionStore;
 import za.co.sibusiso.fraud.evaluation.rules.HighAmountRule;
 import za.co.sibusiso.fraud.evaluation.rules.ImpossibleTravelRule;
 import za.co.sibusiso.fraud.evaluation.rules.RuleEngine;
 import za.co.sibusiso.fraud.ingress.request.TransactionDecoder;
 import za.co.sibusiso.fraud.ingress.security.CredentialAuthenticator;
+import za.co.sibusiso.fraud.policy.ActivePolicyProvider;
+import za.co.sibusiso.fraud.policy.ActivePolicyStore;
 import za.co.sibusiso.fraud.policy.definition.BuiltInRules;
 import za.co.sibusiso.fraud.policy.definition.PolicyLoader;
 import za.co.sibusiso.fraud.policy.definition.RuleRegistry;
@@ -91,6 +94,8 @@ class TransactionalEvaluationTest {
     @Autowired PlatformTransactionManager transactionManager;
     @MockitoSpyBean HighAmountRule high;
     @MockitoSpyBean JdbcTransactionStore store;
+    @MockitoSpyBean ActivePolicyProvider policies;
+    @MockitoSpyBean ActivePolicyStore policyStore;
     private final JsonMapper json = JsonMapper.builder().build();
     private final HttpClient http =
             HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
@@ -137,7 +142,84 @@ class TransactionalEvaluationTest {
 
     @AfterEach
     void resetSpies() {
-        reset(high, store);
+        reset(high, store, policies, policyStore);
+    }
+
+    @Test
+    void newEvaluationSelectsPreparedPolicyOnceAndReplayDoesNotSelectPolicy() throws Exception {
+        var who = identity();
+        String input = body("one-selection", "customer", "card", "1.00");
+        clearInvocations(policies, policyStore);
+
+        var created = post(who, input);
+
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
+        verify(policies, times(1)).prepared();
+        verify(policyStore, times(1)).active();
+        clearInvocations(policies, policyStore);
+        var replay = post(who, input);
+        assertThat(replay.statusCode()).as(replay.body()).isEqualTo(200);
+        assertThat(replay.body()).isEqualTo(created.body());
+        verifyNoInteractions(policies, policyStore);
+    }
+
+    @Test
+    void policyChangeWhileLoadingHistoryKeepsPreparedQueriesAndEvaluationTogether()
+            throws Exception {
+        var who = identity();
+        String oldHash =
+                observer()
+                        .queryForObject(
+                                "SELECT policy_hash FROM fraud.policy_head WHERE singleton",
+                                String.class);
+        var changed = new AtomicBoolean();
+        doAnswer(
+                        invocation -> {
+                            if (changed.compareAndSet(false, true)) {
+                                activate(
+                                        original.replace("25000.00", "0.50")
+                                                .replace("windowSeconds: 600", "windowSeconds: 37")
+                                                .replace(
+                                                        "windowSeconds: 1800",
+                                                        "windowSeconds: 59"));
+                            }
+                            return invocation.callRealMethod();
+                        })
+                .when(store)
+                .aggregate(eq(who.scope()), eq("customer"), any(), any(), anyLong());
+        clearInvocations(policies, policyStore);
+        try {
+            var response = post(who, body("history-capture", "customer", "card", "1.00"));
+            assertThat(response.statusCode()).as(response.body()).isEqualTo(201);
+            assertThat(changed).isTrue();
+            var evaluation = json.readTree(response.body()).get("evaluation");
+            assertThat(evaluation.get("policyHash").asString()).isEqualTo(oldHash);
+            assertThat(evaluation.get("decision").asString()).isEqualTo("CLEAR");
+            verify(policies, times(1)).prepared();
+            verify(policyStore, times(1)).active();
+            verify(store)
+                    .aggregate(
+                            eq(who.scope()),
+                            eq("customer"),
+                            eq(new HistoryQuery.Count(600)),
+                            any(),
+                            anyLong());
+            verify(store)
+                    .aggregate(
+                            eq(who.scope()),
+                            eq("customer"),
+                            eq(new HistoryQuery.Spend(1800, "ZAR")),
+                            any(),
+                            anyLong());
+            assertThat(
+                            observer()
+                                    .queryForObject(
+                                            "SELECT policy_hash FROM fraud.policy_head WHERE singleton",
+                                            String.class))
+                    .isNotEqualTo(oldHash);
+        } finally {
+            activate(original);
+        }
     }
 
     @Test
