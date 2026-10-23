@@ -2,6 +2,16 @@
 
 The service is a Java modular monolith backed by PostgreSQL and Redis. All five rules, protected ingestion, evaluation queries, live policy inspection and the Docker scaling demo are implemented. [Testing](TESTING.md) records the checks and remaining deployment limits. See [Operations](OPERATIONS.md) for runtime commands, [Rules](RULES.md) for fraud logic and [OpenAPI](../api/openapi.yaml) for the HTTP contract.
 
+## Design trade-offs
+
+| Choice | Benefit and limit |
+| --- | --- |
+| [One database transaction and customer lock](#how-an-evaluation-is-saved) | Complete writes and ordered customer history; one busy customer remains serial. |
+| [Live policy selected once per evaluation](#live-policy-and-stable-identities) | No restart for business changes and one coherent decision; unavailable or incompatible policy rejects new evaluations. |
+| [Immutable, as-observed history](#loading-history) | Saved evidence explains what the engine knew; delayed events do not rewrite earlier decisions. |
+| [Cursor pagination](#queries-and-policy-inspection) | Bounded reads over changing data; traversal is not a snapshot and reconciliation needs ID lookups. |
+| [Shared PostgreSQL and Redis](#scaling-and-future-alternatives) | App replicas share decisions, policy and quotas; more replicas do not remove database or hot-customer limits. |
+
 ## Application boundaries
 
 HTTP controllers, their exception advice and documentation setup live in `ingress`: `IngressController` handles transaction/query requests, the optional `PolicyManagementController` handles administration, and `HealthController` handles probes. Subpackages group request decoding and deadlines (`ingress.request`), authentication, security setup and shared quotas (`ingress.security`), and HTTP problem responses (`ingress.error`). The API adapters authenticate callers, validate requests and enforce quotas. Application services coordinate use cases and transactions. Pure domain rules evaluate immutable facts without making network or database calls. Infrastructure adapters handle SQL, policy loading and Redis. Repository interfaces describe specific persistence operations.
@@ -13,13 +23,13 @@ The `evaluation` package groups related responsibilities:
 | Package | Responsibility |
 | --- | --- |
 | `application` | Transaction and query workflows, their storage contracts, pagination and work budgets |
-| `rules` | The rule contract, engine, five implementations and distance calculation |
+| `rules` | The rule contract, policy preparation, typed bindings, five implementations and distance calculation |
 | `history` | Typed history requirements and immutable facts passed to rules |
 | `persistence` | JDBC adapters and the shared stored-evaluation SQL representation |
 
 Evaluation wiring, build identity and the shared flow failure remain at the package root. Application workflows depend on storage interfaces; JDBC adapters implement them. Rule calculations use supplied facts without database access.
 
-Follow an ingestion request through [IngressController](../src/main/java/za/co/sibusiso/fraud/ingress/IngressController.java), [TransactionService](../src/main/java/za/co/sibusiso/fraud/evaluation/application/TransactionService.java), [TransactionalEvaluation](../src/main/java/za/co/sibusiso/fraud/evaluation/application/TransactionalEvaluation.java) and [RuleEngine](../src/main/java/za/co/sibusiso/fraud/evaluation/rules/RuleEngine.java).
+Follow an ingestion request through [IngressController](../src/main/java/za/co/sibusiso/fraud/ingress/IngressController.java), [TransactionService](../src/main/java/za/co/sibusiso/fraud/evaluation/application/TransactionService.java), [TransactionalEvaluation](../src/main/java/za/co/sibusiso/fraud/evaluation/application/TransactionalEvaluation.java) and [PreparedPolicy](../src/main/java/za/co/sibusiso/fraud/evaluation/rules/PreparedPolicy.java). [RuleEngine](../src/main/java/za/co/sibusiso/fraud/evaluation/rules/RuleEngine.java) prepares the typed bindings when a policy is loaded.
 
 Spring JDBC keeps scoped queries, aggregates and row locks explicit. One runtime HikariCP pool and JdbcTransactionManager coordinate financial writes. PostgreSQL owns transactions, evaluations, identities and policy; Redis holds abuse quotas. There is no broker or external event publication in v1, so no outbox is needed.
 
@@ -28,13 +38,13 @@ Spring JDBC keeps scoped queries, aggregates and row locks explicit. One runtime
 1. Ingress checks transport limits, credentials, permissions and the shared principal/route quota. Credentials determine scope and which location sources the caller may supply.
 2. The decoder validates and normalizes the request. The transaction service hashes its canonical representation and looks up `(scope,eventId)`. Equivalent input returns the original result; changed content returns a conflict. This lookup comes before current age/currency policy checks, so a retry can still recover an old result. Static safety and current authorization still apply.
 3. New events pass lifecycle validation. Inside a `READ COMMITTED` transaction, the writer creates customer state if needed, locks `(scope,customerId)` with `FOR UPDATE` and checks event identity again. It holds only one customer lock per transaction.
-4. The writer inserts or verifies the immutable instrument/customer binding. It samples database wall time after acquiring the lock, sets `acceptedAt = max(clock_timestamp(), lastAcceptedAt)` and advances `customerSequence`. Clock regressions within the startup-configured tolerance are clamped; larger regressions reject the new event. New-event age and skew checks use the original wall-time sample; it is not persisted separately.
-5. The writer captures the active database policy and validates new-event currency, amount and age against that snapshot and database time. The preceding customer sequence becomes `contextHighWatermark`. Enabled rules declare the history they need; the JDBC adapter loads it sequentially under the same lock and deadline. Every rule uses the captured policy and facts.
+4. The writer inserts or verifies the immutable instrument/customer binding. It samples database wall time after acquiring the lock and sets `acceptedAt = max(clock_timestamp(), lastAcceptedAt)`. Clock regressions within the startup-configured tolerance are clamped; larger regressions reject the new event. New-event age and skew checks use the original wall-time sample; it is not persisted separately.
+5. The writer captures one prepared active policy and validates new-event currency, amount and age against its snapshot and database time. The preceding customer sequence becomes `contextHighWatermark`. Enabled bindings declare the history they need; the JDBC adapter loads it sequentially under the same lock and deadline. History planning and rule evaluation reuse those captured bindings and facts.
 6. Event, evaluation, rule results and customer state commit together. The response is returned only after commit completes. A unique-event loser exits its aborted transaction before one bounded primary lookup; writes are never automatically retried.
 
 This provides one committed evaluation per retained scoped event ID, assuming stable producer IDs, database durability and the same locking protocol for every writer/import. It cannot recognize one payment submitted under different IDs. Different customers can run concurrently; one customer's history deliberately stays serial. `READ COMMITTED` alone does not provide that ordering—the customer lock does.
 
-A public `@Transactional` method on a separate injected bean owns the write boundary. The coordinator calls through Spring's proxy with explicit `READ_COMMITTED` isolation and `rollbackFor=Exception.class`. Errors propagate and participating writes share the transaction. A nontransactional facade handles recovery after commit or rollback has finished. See [Spring transactions](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html) and [PostgreSQL isolation](https://www.postgresql.org/docs/current/transaction-iso.html).
+A public `@Transactional` method on a separate injected bean owns the write boundary. The coordinator calls through Spring's proxy with explicit `READ_COMMITTED` isolation and `rollbackFor=RuleEvaluationException.class`. Named private steps share that transaction. Checked rule failures retain their original cause and explicitly roll back; unchecked failures retain Spring's default rollback. A nontransactional facade handles recovery after commit or rollback has finished. See [Spring transactions](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html) and [PostgreSQL isolation](https://www.postgresql.org/docs/current/transaction-iso.html).
 
 Deferred constraints enforce event/evaluation pairing and complete rule results. Runtime can insert immutable records and update customer state; it cannot update or delete events, evaluations, results or instrument bindings. Stored producer ID, permission revision and source-permission snapshot explain the admitted provenance without saving credentials. Responses come from the committed representation, including policy/build IDs and explicit disabled-rule results. Packaged build identity hashes the executable JAR; class-directory runs hash compiled artifact files.
 
@@ -70,7 +80,7 @@ The adapter reuses the policy loader and rule-engine verification. Validation is
 
 A dedicated adapter-owned writer pool authenticates as `fraud_policy_api`; enabling it does not replace the runtime datasource or widen its grants. This role can read policy and call only conditional activation, with no table writes, schema changes or CLI activation permission. Audit retains the database actor and records the authenticated API principal. Requests cannot nominate that actor. An uncertain activation response requires reading current revision/hash before deciding what to do; the server does not retry writes automatically.
 
-[Operations](OPERATIONS.md#optional-policy-administration-api) covers the opt-in Compose overlay, separate credentials and connection budget. The frontend remains a separate delivery milestone.
+[Operations](OPERATIONS.md#optional-policy-administration-api) covers the opt-in Compose overlay, separate credentials and connection budget. The delivered [assessment UI](https://github.com/SibusisoMashita/fraud-rule-engine-ui) is a separate repository with its own setup and verification.
 
 ## Data ownership and representation
 
@@ -96,7 +106,7 @@ R2/R3 use acceptance time; R4/R5 use event time over already observed history. T
 
 [Business policy](../config/policy.example.yaml) and [startup settings](../config/service.example.yaml) are separate. PostgreSQL holds immutable policy versions, one active reference and append-only activation history. The CLI configuration identity activates policy through a serialized database function; the primary runtime database identity has SELECT only on policy tables.
 
-Every selection reads the committed active hash. It may reuse a cached typed version only for that exact hash; there is no polling delay or fallback on database/configuration failure. **Business changes require no app restart.** An evaluation keeps the policy it started with. Operational limits require validated startup configuration. [Operations](OPERATIONS.md) explains activation and recovery.
+Every selection reads the committed active hash. Loading a version verifies compatibility and binds each enabled implementation to its checked settings once. A single-entry cache may reuse that prepared policy only for the selected hash; there is no polling delay or fallback on database/configuration failure. Concurrent misses may prepare independently, and revision checks prevent older preparation from evicting a newer selection. Disabled rules need no implementation or history lookup. **Business changes require no app restart.** An evaluation keeps the policy it started with. Operational limits require validated startup configuration. [Operations](OPERATIONS.md) explains activation and recovery.
 
 Validation rejects unknown/duplicate fields or rule IDs, invalid relationships, currency gaps, incompatible schemas and all-disabled policies. Every enabled rule needs a matching implementation, algorithm/settings types and enough evidence capacity. The sample enables all five rules. Dependency injection discovers typed definitions, implementations and history requirements without rule-name branches in the coordinator. See [adding a rule](RULES.md#adding-a-rule).
 
@@ -121,7 +131,7 @@ Ingest, READ, POLICY and physical-source permissions are separate. Headers canno
 
 A bounded Redis Lua script atomically enforces principal/route token buckets using Redis TIME. Configured principals bound key cardinality; invalid keys create no buckets. Refill time never moves backwards, tokens are capped, state expires and Redis uses `noeviction`. Dependency/script/memory errors close protected routes. Restart, state loss or forward clock jumps may replenish allowance; recovery resumes after health returns. These are abuse quotas, not durable financial limits.
 
-The HTTP adapter rejects duplicate/unknown/missing fields, scalar coercion, invalid UTF-8, trailing JSON, unsupported content types/encodings and invalid static transaction/location facts. Declared and streamed bodies are bounded. Source permissions are checked before dispatch. Health routes do not need authentication or quotas. A nonblocking per-replica permit bounds admitted work and is released on every exit. Connector limits bound workers, connections, socket backlog, headers, discarded bodies and idle waits. Safe Problem responses include generated correlation IDs and `no-store`, without credentials or parser/SQL diagnostics.
+The HTTP adapter rejects duplicate/unknown/missing fields, scalar coercion, invalid UTF-8, trailing JSON, unsupported content types/encodings and invalid static transaction/location facts. Declared and streamed bodies are bounded. Source permissions are checked before dispatch. Health routes do not need authentication or quotas. A nonblocking per-replica permit bounds admitted work and is released on every exit. Connector limits bound workers, connections, socket backlog, headers, discarded bodies and idle waits. Safe Problem responses include generated correlation IDs and `no-store`, without credentials or parser/SQL diagnostics. Transaction domain and new-event policy rejections return 422 with one optional allowlisted field error and fixed guidance; JSON shape/type failures retain 400. [OpenAPI](../api/openapi.yaml) defines the error vocabulary.
 
 Deadlines are cooperative. The work budget spans authentication, limiting, decoding and processing, with a commit reserve. The writer applies decreasing local statement/lock limits, checks time around rule execution and reserves time for deferred commit checks. Spring's transaction timeout includes processing plus that reserve. Pool, statement and socket limits each bound a part of the request; none proves noncommit after a lost acknowledgement. See [PostgreSQL timeout semantics](https://www.postgresql.org/docs/current/runtime-config-client.html).
 

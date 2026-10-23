@@ -4,13 +4,13 @@ This guide explains how to run the checks, what they cover and how to read the m
 
 ## Run the tests
 
-Run these commands from the repository root. Java tests need JDK 21 and a running Docker engine; the Maven wrapper downloads Maven for you. PostgreSQL and Redis integration tests use disposable containers and are not silently skipped when Docker is unavailable.
+Run these commands from the repository root. Java tests need JDK 21 and a running Docker engine; the Maven wrapper downloads Maven for you. On macOS, select JDK 21 using the [README setup](../README.md#run-tests). Confirm `docker info` succeeds before testing. For a non-default Unix socket, including Rancher Desktop, follow [Docker context setup](OPERATIONS.md#testcontainers-docker-context) first. PostgreSQL and Redis integration tests use disposable containers and are not silently skipped when Docker is unavailable.
 
 ```sh
 ./mvnw -B -ntp verify
 ```
 
-`verify` runs the Java unit, contract and integration tests, packages the application and checks Java formatting. If Testcontainers cannot find your Docker engine, check the [Docker context setup](OPERATIONS.md#testcontainers-docker-context).
+`verify` runs the Java unit, contract and integration tests, packages the application, checks Java formatting and enforces coverage gates.
 
 Production and test Java use Spotless 3.10.4 and google-java-format 1.36.1 with the four-space AOSP style. To format your changes before verification:
 
@@ -19,6 +19,12 @@ Production and test Java use Spotless 3.10.4 and google-java-format 1.36.1 with 
 ```
 
 The formatter is pinned to the version supported by the Spotless adapter. Maven downloads it automatically; no separate installation is needed.
+
+JaCoCo 0.8.15 measures all production code. Verification requires at least **95% line / 80% branch coverage overall** and **95% line / 90% branch coverage for the rules package**. Reports are generated before the coverage check under ignored `target/site/jacoco/`: open `index.html` for the readable report or use `jacoco.xml` with tooling. Missing execution data or reports also fail verification. For a fresh measurement:
+
+```sh
+./mvnw -B -ntp clean verify
+```
 
 To check the built Docker image and the complete local lifecycle:
 
@@ -137,11 +143,28 @@ These figures apply to this workload and environment. They do not establish maxi
 
 ## CI and reports
 
-[GitHub Actions](../.github/workflows/verify.yaml) runs the helper and Java suites, formatting checks, Docker build/smoke, the load-balancer/autoscaling checks, recovery and legacy migration. Manual workflow dispatch can also run the full capacity suite. A separate job runs the source, dependency, deployment-image, fault-proxy and secret scans. There is no standalone SAST engine.
+[GitHub Actions](../.github/workflows/verify.yaml) runs the helper and Java suites, formatting and coverage checks, Docker build/smoke, the load-balancer/autoscaling checks, recovery and legacy migration. Pushes to `main` and `fix/terry-feedback`, and pull requests, trigger verification. Manual workflow dispatch can also run the full capacity suite. A separate job runs the source, dependency, deployment-image, fault-proxy and secret scans. There is no standalone SAST engine.
 
-CI keeps operational/scaling results and bounded failure logs, with generated test credentials redacted. It does not upload raw scanner secret findings. Reports identify the command, commit or artifact digest, dependency versions, fixture/policy hashes, environment, UTC time and outcome. Clean-clone runtime checks are recorded separately from CI build success.
+CI retains HTML/XML coverage reports for 14 days, including when a coverage gate fails. It also keeps operational/scaling results and bounded failure logs, with generated test credentials redacted. It does not upload raw scanner secret findings. Operational reports identify the commit or artifact digest, dependency versions, fixture/policy hashes, environment, UTC time and outcome. Clean-clone runtime checks are recorded separately from CI build success.
 
 ## Release checks
+
+### Review verification on 2026-10-23
+
+Using JDK 21 and Docker Desktop on macOS, `clean verify` passed **458 Java tests** with no failures, errors or skips; the operational helper suite passed **17 tests**. Coverage includes all production code:
+
+| Scope | Line coverage | Branch coverage |
+| --- | --- | --- |
+| Whole application | 97.04% (2,428/2,502) | 86.00% (786/914) |
+| Rules package | 99.67% (304/305) | 96.23% (102/106) |
+
+Each coverage gate rejected a deliberately raised threshold, and missing execution data/reports failed verification. Linux CI produced matching coverage and retained readable HTML and XML artifacts.
+
+The candidate Docker build and full lifecycle passed, including all five rules across two instances, live policy changes and immutable replay. Dedicated recovery/restore, legacy database upgrade, readiness routing and automatic scaling also passed; the scaling workload served 240 reads and completed **one → two → one** replicas. The security gate found no HIGH/CRITICAL vulnerabilities or secrets across its seven scans, and all 75 packaged libraries matched the SBOM by SHA-256. These checks used isolated images, projects and data.
+
+A fresh public clone at `cac0562`, with the documentation changes applied, passed the same Java/helper suites and the README's Docker startup and terminal examples. Fresh credentials and a separate database verified create/replay/conflict/retrieval, safe field errors, live policy activation without replacing the app container, and persistence after stopping and restarting. The two accepted transactions retained two evaluations and ten rule results. The existing backend/UI containers and default image tag were unchanged.
+
+### Earlier release evidence
 
 The reviewed `83ae32d` passed [Linux GitHub Actions](https://github.com/SibusisoMashita/fraud-rule-engine-service/actions/runs/38978548576) on 2026-10-17: 321 Java tests, 16 helper tests, Docker build and lifecycle, load balancing and automatic scaling, recovery/restore, legacy migration and the full security gate. The optional capacity benchmark was skipped for that push; the measured local benchmark above is separate evidence.
 
