@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import jakarta.servlet.http.HttpServletRequest;
@@ -49,9 +50,7 @@ public final class ApiProblems {
         if (failure.retryAfterSeconds() > 0) {
             response.setHeader(HttpHeaders.RETRY_AFTER, Long.toString(failure.retryAfterSeconds()));
         }
-        JSON.writeValue(
-                response.getOutputStream(),
-                Map.of(
+        var problem = new LinkedHashMap<String, Object>(Map.of(
                         "type", "about:blank",
                         "title", failure.status().getReasonPhrase(),
                         "status", failure.status().value(),
@@ -59,6 +58,10 @@ public final class ApiProblems {
                         "correlationId", request.getAttribute(CORRELATION),
                         "retryable", failure.retryAfterSeconds() > 0,
                         "outcome", failure.outcome()));
+        if (failure.validationError() != null) {
+            problem.put("errors", List.of(failure.validationError().problem()));
+        }
+        JSON.writeValue(response.getOutputStream(), problem);
     }
 
     /** Log once, even when a response is already committed. Never render exception messages. */

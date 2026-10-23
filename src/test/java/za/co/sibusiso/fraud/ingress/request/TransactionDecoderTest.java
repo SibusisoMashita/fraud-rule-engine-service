@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.core.io.ClassPathResource;
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.configuration.StrictYaml;
+import za.co.sibusiso.fraud.domain.TransactionValidationException;
 import za.co.sibusiso.fraud.ingress.error.ApiFailure;
 
 import static org.assertj.core.api.Assertions.*;
@@ -28,6 +29,27 @@ class TransactionDecoderTest {
         assertThat(event.money().amount().toPlainString()).isEqualTo("1500.00");
         assertThat(event.occurredAt().toString()).isEqualTo("2026-10-15T08:00:00Z");
         assertThat(decode(VALID.replace("ZAR", "USD")).money().currency()).isEqualTo("USD");
+    }
+    @Test void preservesValidLeapDayOffsetAndMicroseconds() throws Exception {
+        var event = decode(VALID.replace("2026-10-15T10:00:00+02:00", "2024-02-29T10:00:00.123456+02:00"));
+        assertThat(event.occurredAt().toString()).isEqualTo("2024-02-29T08:00:00.123456Z");
+    }
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "2026-02-30T10:00:00Z", "2026-10-15T10:00:00+19:00",
+            "2026-10-15T10:00:00+18:01", "2026-10-15T10:00:60Z",
+            "0001-01-01T00:00:00+18:00", "9999-12-31T23:59:59-18:00"
+    })
+    void invalidTimeRetainsAnInternalCauseAndFixedPublicMessage(String timestamp) {
+        assertThatThrownBy(() -> decode(VALID.replace("2026-10-15T10:00:00+02:00", timestamp)))
+                .isInstanceOfSatisfying(ApiFailure.class, failure -> {
+                    assertThat(failure.status().value()).isEqualTo(422);
+                    assertThat(failure.code()).isEqualTo("INVALID_TRANSACTION");
+                    assertThat(failure.getCause()).isInstanceOf(TransactionValidationException.class).hasCauseInstanceOf(RuntimeException.class);
+                    assertThat(failure.validationError().problem()).containsEntry("field", "occurredAt")
+                            .containsEntry("code", "INVALID_TIMESTAMP")
+                            .containsEntry("message", "Use a real date and time with a UTC offset and at most six fractional-second digits.");
+                });
     }
     @ParameterizedTest @MethodSource("invalid")
     void rejectsMalformedOrUnsafeInput(String input, int status) {

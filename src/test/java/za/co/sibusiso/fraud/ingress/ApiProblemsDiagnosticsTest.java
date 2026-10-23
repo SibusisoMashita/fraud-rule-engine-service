@@ -20,9 +20,12 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.configuration.StrictYaml;
 import za.co.sibusiso.fraud.contracts.ErrorCode;
+import za.co.sibusiso.fraud.domain.TransactionValidationException.Field;
+import za.co.sibusiso.fraud.domain.TransactionValidationException.Reason;
 import za.co.sibusiso.fraud.evaluation.FlowFailure;
 import za.co.sibusiso.fraud.ingress.error.ApiFailure;
 import za.co.sibusiso.fraud.ingress.error.ApiProblems;
+import za.co.sibusiso.fraud.ingress.error.ValidationError;
 import za.co.sibusiso.fraud.ingress.security.Caller;
 import za.co.sibusiso.fraud.ingress.security.CredentialAuthenticator;
 import za.co.sibusiso.fraud.ingress.security.IngressRoute;
@@ -78,7 +81,7 @@ class ApiProblemsDiagnosticsTest {
 
         assertThat(failure.getCause()).isSameAs(database);
         assertThat(response.getStatus()).isEqualTo(503);
-        assertThat(response.getContentAsString()).contains("COMMIT_OUTCOME_UNKNOWN", "UNKNOWN");
+        assertThat(response.getContentAsString()).contains("COMMIT_OUTCOME_UNKNOWN", "UNKNOWN").doesNotContain("\"errors\"");
         String correlation = response.getHeader("X-Correlation-ID");
         assertThat(correlation).isNotBlank();
         assertThat(response.getContentAsString()).contains(correlation);
@@ -202,14 +205,27 @@ class ApiProblemsDiagnosticsTest {
     void expectedClientRejectionsDoNotCreateServerFailureLogs() throws Exception {
         for (HttpStatus status :
                 new HttpStatus[] {
-                    HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN, HttpStatus.TOO_MANY_REQUESTS
+                    HttpStatus.BAD_REQUEST, HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN,
+                    HttpStatus.CONFLICT, HttpStatus.UNPROCESSABLE_CONTENT, HttpStatus.TOO_MANY_REQUESTS
                 }) {
+            var response = new MockHttpServletResponse();
             ApiProblems.write(
                     sensitiveRequest(),
-                    new MockHttpServletResponse(),
+                    response,
                     new ApiFailure(status, ErrorCode.FORBIDDEN));
+            assertThat(response.getContentAsString()).doesNotContain("\"errors\"");
         }
         assertThat(logs.list).isEmpty();
+    }
+
+    @Test
+    void fieldDetailsCannotClaimAnUnknownOrServerFailureIsInvalidInput() {
+        var detail = new ValidationError(Field.OCCURRED_AT, Reason.INVALID_TIMESTAMP);
+        assertThrows(IllegalArgumentException.class, () -> new ApiFailure(
+                HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR).withValidationError(detail));
+        assertThrows(IllegalArgumentException.class, () -> new ApiFailure(
+                HttpStatus.UNPROCESSABLE_CONTENT, ErrorCode.INVALID_TRANSACTION, 0,
+                ApiFailure.Outcome.UNKNOWN).withValidationError(detail));
     }
 
     private static MockHttpServletRequest sensitiveRequest() {

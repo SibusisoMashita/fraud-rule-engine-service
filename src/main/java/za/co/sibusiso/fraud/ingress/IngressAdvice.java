@@ -12,6 +12,7 @@ import za.co.sibusiso.fraud.evaluation.FlowFailure;
 import za.co.sibusiso.fraud.ingress.error.ApiFailure;
 import za.co.sibusiso.fraud.ingress.error.ApiFailure.Outcome;
 import za.co.sibusiso.fraud.ingress.error.ApiProblems;
+import za.co.sibusiso.fraud.ingress.error.ValidationError;
 
 @RestControllerAdvice(assignableTypes = {IngressController.class, PolicyManagementController.class})
 @Profile("!migrate & !policy-admin")
@@ -23,15 +24,17 @@ public final class IngressAdvice {
                 failure.status() == HttpStatus.SERVICE_UNAVAILABLE
                         ? ApiFailure.DEFAULT_RETRY_AFTER_SECONDS
                         : 0;
-        respond(
-                request,
-                response,
-                new ApiFailure(
+        var problem = new ApiFailure(
                         failure.status(),
                         failure.code(),
                         retryAfterSeconds,
                         failure.unknown() ? Outcome.UNKNOWN : Outcome.NOT_ACCEPTED,
-                        failure));
+                        failure);
+        if (failure.status() == HttpStatus.UNPROCESSABLE_CONTENT && !failure.unknown()) {
+            var error = ValidationError.forEligibility(failure.code());
+            if (error != null) problem = problem.withValidationError(error);
+        }
+        respond(request, response, problem);
     }
 
     @ExceptionHandler(Exception.class)

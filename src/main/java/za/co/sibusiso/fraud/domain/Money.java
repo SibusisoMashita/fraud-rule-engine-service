@@ -1,14 +1,27 @@
 package za.co.sibusiso.fraud.domain;
 
 import java.math.BigDecimal;
+import za.co.sibusiso.fraud.domain.TransactionValidationException.Field;
+import za.co.sibusiso.fraud.domain.TransactionValidationException.Reason;
 
 public record Money(String currency, BigDecimal amount) {
     public Money {
-        currency = ContractChecks.currency(currency);
-        amount = ContractChecks.amount(amount);
+        currency = validateCurrency(currency);
+        amount = validateAmount(amount);
     }
 
     public static Money parse(String currency, String amount) {
-        return new Money(currency, ContractChecks.amount(amount));
+        return new Money(currency, TransactionValidationException.validate(
+                Field.AMOUNT, Reason.INVALID_AMOUNT, () -> ContractChecks.amount(amount)));
+    }
+
+    private static String validateCurrency(String value) {
+        return TransactionValidationException.validate(
+                Field.CURRENCY, Reason.INVALID_CURRENCY, () -> ContractChecks.currency(value));
+    }
+
+    private static BigDecimal validateAmount(BigDecimal value) {
+        return TransactionValidationException.validate(
+                Field.AMOUNT, Reason.INVALID_AMOUNT, () -> ContractChecks.amount(value));
     }
 }

@@ -15,6 +15,7 @@ public final class ApiFailure extends RuntimeException {
     private final String code;
     private final long retryAfterSeconds;
     private final Outcome outcome;
+    private final ValidationError validationError;
 
     public ApiFailure(HttpStatus status, ErrorCode code) {
         this(status, code, 0);
@@ -51,12 +52,33 @@ public final class ApiFailure extends RuntimeException {
             long retryAfterSeconds,
             Outcome outcome,
             Throwable cause) {
+        this(status, code, retryAfterSeconds, outcome, cause, null);
+    }
+
+    private ApiFailure(
+            HttpStatus status,
+            String code,
+            long retryAfterSeconds,
+            Outcome outcome,
+            Throwable cause,
+            ValidationError validationError) {
         super(code, cause);
         this.status = status;
         this.code = code;
         this.retryAfterSeconds = retryAfterSeconds;
         this.outcome = outcome;
+        this.validationError = validationError;
     }
+
+    public ApiFailure withValidationError(ValidationError error) {
+        if (status != HttpStatus.UNPROCESSABLE_CONTENT || outcome != Outcome.NOT_ACCEPTED) {
+            throw new IllegalArgumentException("Validation details require a rejected 422 response");
+        }
+        return new ApiFailure(status, code, retryAfterSeconds, outcome, getCause(),
+                java.util.Objects.requireNonNull(error));
+    }
+
+    public ValidationError validationError() { return validationError; }
 
     public String outcome() {
         return outcome.name();
