@@ -1,17 +1,11 @@
 package za.co.sibusiso.fraud.evaluation.application;
 
-import java.math.BigDecimal;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.UUID;
-import java.util.function.LongSupplier;
-import java.util.function.Supplier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.contracts.ErrorCode;
 import za.co.sibusiso.fraud.domain.EventTime;
@@ -30,6 +24,14 @@ import za.co.sibusiso.fraud.evaluation.rules.RuleEngine;
 import za.co.sibusiso.fraud.ingress.security.Caller;
 import za.co.sibusiso.fraud.policy.ActivePolicyProvider;
 import za.co.sibusiso.fraud.policy.definition.PolicySnapshot;
+
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.UUID;
+import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 @Service
 @Profile("!migrate & !policy-admin")

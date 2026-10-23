@@ -1,14 +1,5 @@
 package za.co.sibusiso.fraud.evaluation.rules;
 
-import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.TreeMap;
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.domain.ContractChecks;
 import za.co.sibusiso.fraud.domain.EvaluationOutcome;
@@ -20,6 +11,16 @@ import za.co.sibusiso.fraud.evaluation.history.LocationQuery;
 import za.co.sibusiso.fraud.evaluation.history.SmallPaymentsQuery;
 import za.co.sibusiso.fraud.policy.definition.PolicySnapshot;
 import za.co.sibusiso.fraud.policy.definition.RuleSettings;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeMap;
 
 public final class RuleEngine {
     private final Map<RuleId, FraudRule<?>> implementations;

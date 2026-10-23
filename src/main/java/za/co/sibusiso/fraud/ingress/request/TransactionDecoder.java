@@ -1,27 +1,30 @@
 package za.co.sibusiso.fraud.ingress.request;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.math.BigDecimal;
-import java.util.HashSet;
-import java.util.Set;
 import org.springframework.http.HttpStatus;
+
 import tools.jackson.databind.JsonNode;
+
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.contracts.ErrorCode;
 import za.co.sibusiso.fraud.domain.EventTime;
 import za.co.sibusiso.fraud.domain.Money;
+import za.co.sibusiso.fraud.domain.TransactionEvent;
 import za.co.sibusiso.fraud.domain.TransactionEvent.Channel;
 import za.co.sibusiso.fraud.domain.TransactionEvent.LocationSource;
 import za.co.sibusiso.fraud.domain.TransactionEvent.PhysicalLocation;
 import za.co.sibusiso.fraud.domain.TransactionEvent.Status;
 import za.co.sibusiso.fraud.domain.TransactionEvent.Type;
-import za.co.sibusiso.fraud.domain.TransactionEvent;
 import za.co.sibusiso.fraud.domain.TransactionValidationException;
 import za.co.sibusiso.fraud.domain.TransactionValidationException.Field;
 import za.co.sibusiso.fraud.domain.TransactionValidationException.Reason;
 import za.co.sibusiso.fraud.ingress.error.ApiFailure;
 import za.co.sibusiso.fraud.ingress.error.ValidationError;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.math.BigDecimal;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Explicit HTTP-to-domain adapter: no scalar coercion, ignored fields or policy-dependent identity.
@@ -70,7 +73,10 @@ public final class TransactionDecoder {
                                 number(value, "latitude"),
                                 number(value, "longitude"),
                                 number(value, "accuracyKm"),
-                                enumeration(LocationSource.class, text(value, "source"), Field.LOCATION_SOURCE),
+                                enumeration(
+                                        LocationSource.class,
+                                        text(value, "source"),
+                                        Field.LOCATION_SOURCE),
                                 city);
             }
             String category = text(root, "category");
@@ -89,14 +95,18 @@ public final class TransactionDecoder {
                     EventTime.parse(text(root, "occurredAt")),
                     location);
         } catch (TransactionValidationException invalidDomain) {
-            throw new ApiFailure(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCode.INVALID_TRANSACTION,
-                    0, invalidDomain).withValidationError(ValidationError.from(invalidDomain));
+            throw new ApiFailure(
+                            HttpStatus.UNPROCESSABLE_CONTENT,
+                            ErrorCode.INVALID_TRANSACTION,
+                            0,
+                            invalidDomain)
+                    .withValidationError(ValidationError.from(invalidDomain));
         }
     }
 
     private static <E extends Enum<E>> E enumeration(Class<E> type, String value, Field field) {
-        return TransactionValidationException.validate(field, Reason.INVALID_VALUE,
-                () -> Enum.valueOf(type, value));
+        return TransactionValidationException.validate(
+                field, Reason.INVALID_VALUE, () -> Enum.valueOf(type, value));
     }
 
     private String id(JsonNode root, String name) {

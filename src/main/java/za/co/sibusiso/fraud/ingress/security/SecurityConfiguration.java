@@ -13,6 +13,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
+
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.contracts.ErrorCode;
 import za.co.sibusiso.fraud.ingress.ApiPaths;
@@ -84,7 +85,8 @@ class SecurityConfiguration {
                                         .hasAuthority(Caller.Role.POLICY_ADMIN.name())
                                         .requestMatchers(HttpMethod.PUT, ApiPaths.ADMIN_POLICY)
                                         .hasAuthority(Caller.Role.POLICY_ADMIN.name())
-                                        .requestMatchers(HttpMethod.POST, ApiPaths.ADMIN_POLICY_VALIDATE)
+                                        .requestMatchers(
+                                                HttpMethod.POST, ApiPaths.ADMIN_POLICY_VALIDATE)
                                         .hasAuthority(Caller.Role.POLICY_ADMIN.name());
                             }
                             auth.anyRequest().denyAll();

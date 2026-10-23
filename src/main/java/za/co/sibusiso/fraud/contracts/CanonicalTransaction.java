@@ -1,12 +1,13 @@
 package za.co.sibusiso.fraud.contracts;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
 import za.co.sibusiso.fraud.domain.ContractChecks;
 import za.co.sibusiso.fraud.domain.TransactionEvent;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 public final class CanonicalTransaction {
-    private CanonicalTransaction() { }
+    private CanonicalTransaction() {}
 
     public static String hash(String scope, TransactionEvent event) {
         return CanonicalJson.sha256("fraud-request-v1", document(scope, event));

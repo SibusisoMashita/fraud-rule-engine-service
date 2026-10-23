@@ -2,8 +2,10 @@ package za.co.sibusiso.fraud.policy.definition;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
-import java.math.BigDecimal;
+
 import za.co.sibusiso.fraud.domain.ContractChecks;
+
+import java.math.BigDecimal;
 
 public record PolicyAmount(String decimal) {
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
@@ -11,8 +13,12 @@ public record PolicyAmount(String decimal) {
         ContractChecks.amount(decimal);
     }
 
-    public BigDecimal value() { return new BigDecimal(decimal); }
+    public BigDecimal value() {
+        return new BigDecimal(decimal);
+    }
 
     @JsonValue
-    public String canonicalValue() { return value().stripTrailingZeros().toPlainString(); }
+    public String canonicalValue() {
+        return value().stripTrailingZeros().toPlainString();
+    }
 }

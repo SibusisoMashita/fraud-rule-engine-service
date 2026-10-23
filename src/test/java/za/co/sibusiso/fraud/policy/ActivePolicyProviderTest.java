@@ -1,5 +1,15 @@
 package za.co.sibusiso.fraud.policy;
 
+import static org.assertj.core.api.Assertions.*;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ClassPathResource;
+
+import za.co.sibusiso.fraud.configuration.*;
+import za.co.sibusiso.fraud.policy.definition.BuiltInRules;
+import za.co.sibusiso.fraud.policy.definition.PolicyLoader;
+import za.co.sibusiso.fraud.policy.definition.RuleRegistry;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -7,22 +17,34 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import org.junit.jupiter.api.Test;
-import org.springframework.core.io.ClassPathResource;
-import za.co.sibusiso.fraud.configuration.*;
-import za.co.sibusiso.fraud.policy.definition.BuiltInRules;
-import za.co.sibusiso.fraud.policy.definition.PolicyLoader;
-import za.co.sibusiso.fraud.policy.definition.RuleRegistry;
-
-import static org.assertj.core.api.Assertions.*;
 
 class ActivePolicyProviderTest {
-    private final za.co.sibusiso.fraud.evaluation.rules.RuleEngine engine = new za.co.sibusiso.fraud.evaluation.rules.RuleEngine(
-            java.util.List.of(new za.co.sibusiso.fraud.evaluation.rules.HighAmountRule(), new za.co.sibusiso.fraud.evaluation.rules.TransactionVelocityRule(), new za.co.sibusiso.fraud.evaluation.rules.CumulativeSpendRule(),new za.co.sibusiso.fraud.evaluation.rules.SmallPaymentBurstRule(), new za.co.sibusiso.fraud.evaluation.rules.ImpossibleTravelRule(new StrictYaml().read(new ClassPathResource("config/service.example.yaml"), ServiceLimits.class).api().maxLocationCandidatesPerEvaluation())),
-            new StrictYaml().read(new ClassPathResource("config/service.example.yaml"), ServiceLimits.class).api().maxEvidenceFactsPerRule());
+    private final za.co.sibusiso.fraud.evaluation.rules.RuleEngine engine =
+            new za.co.sibusiso.fraud.evaluation.rules.RuleEngine(
+                    java.util.List.of(
+                            new za.co.sibusiso.fraud.evaluation.rules.HighAmountRule(),
+                            new za.co.sibusiso.fraud.evaluation.rules.TransactionVelocityRule(),
+                            new za.co.sibusiso.fraud.evaluation.rules.CumulativeSpendRule(),
+                            new za.co.sibusiso.fraud.evaluation.rules.SmallPaymentBurstRule(),
+                            new za.co.sibusiso.fraud.evaluation.rules.ImpossibleTravelRule(
+                                    new StrictYaml()
+                                            .read(
+                                                    new ClassPathResource(
+                                                            "config/service.example.yaml"),
+                                                    ServiceLimits.class)
+                                            .api()
+                                            .maxLocationCandidatesPerEvaluation())),
+                    new StrictYaml()
+                            .read(
+                                    new ClassPathResource("config/service.example.yaml"),
+                                    ServiceLimits.class)
+                            .api()
+                            .maxEvidenceFactsPerRule());
     private final StrictYaml yaml = new StrictYaml();
-    private final PolicyLoader loader = new PolicyLoader(yaml, RuleRegistry.of(BuiltInRules.definitions(), 64));
-    private final String original = yaml.readText(new ClassPathResource("config/policy.example.yaml"));
+    private final PolicyLoader loader =
+            new PolicyLoader(yaml, RuleRegistry.of(BuiltInRules.definitions(), 64));
+    private final String original =
+            yaml.readText(new ClassPathResource("config/policy.example.yaml"));
 
     @Test
     void selectsCommittedDatabaseVersionOnEveryCallWithoutRestartOrPolling() {
@@ -61,7 +83,9 @@ class ActivePolicyProviderTest {
         store.documents.put("f".repeat(64), original);
         store.reference.set(new ActivePolicyStore.Reference(1, "f".repeat(64)));
         assertThatThrownBy(new ActivePolicyProvider(store, loader, engine::verify)::current)
-                .isInstanceOf(PolicyUnavailableException.class).rootCause().hasMessageContaining("hash");
+                .isInstanceOf(PolicyUnavailableException.class)
+                .rootCause()
+                .hasMessageContaining("hash");
     }
 
     @Test
@@ -70,21 +94,26 @@ class ActivePolicyProviderTest {
         String firstHash = store.publish(1, original);
         var selectedOld = new CountDownLatch(1);
         var releaseOld = new CountDownLatch(1);
-        ActivePolicyStore blocking = new ActivePolicyStore() {
-            public Reference active() { return store.active(); }
-            public String document(String hash) {
-                if (hash.equals(firstHash)) {
-                    selectedOld.countDown();
-                    try {
-                        if (!releaseOld.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Test latch timed out");
-                    } catch (InterruptedException failure) {
-                        Thread.currentThread().interrupt();
-                        throw new IllegalStateException(failure);
+        ActivePolicyStore blocking =
+                new ActivePolicyStore() {
+                    public Reference active() {
+                        return store.active();
                     }
-                }
-                return store.document(hash);
-            }
-        };
+
+                    public String document(String hash) {
+                        if (hash.equals(firstHash)) {
+                            selectedOld.countDown();
+                            try {
+                                if (!releaseOld.await(5, TimeUnit.SECONDS))
+                                    throw new IllegalStateException("Test latch timed out");
+                            } catch (InterruptedException failure) {
+                                Thread.currentThread().interrupt();
+                                throw new IllegalStateException(failure);
+                            }
+                        }
+                        return store.document(hash);
+                    }
+                };
         var provider = new ActivePolicyProvider(blocking, loader, engine::verify);
         try (var executor = Executors.newSingleThreadExecutor()) {
             var oldCall = executor.submit(provider::current);
@@ -97,7 +126,9 @@ class ActivePolicyProviderTest {
                 assertThat(oldCall.get(5, TimeUnit.SECONDS).policyHash()).isEqualTo(firstHash);
                 assertThat(provider.current()).isSameAs(next);
                 assertThat(store.documentReads).hasValue(2);
-            } finally { releaseOld.countDown(); }
+            } finally {
+                releaseOld.countDown();
+            }
         }
     }
 

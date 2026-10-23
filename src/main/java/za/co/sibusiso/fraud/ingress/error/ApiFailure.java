@@ -1,6 +1,7 @@
 package za.co.sibusiso.fraud.ingress.error;
 
 import org.springframework.http.HttpStatus;
+
 import za.co.sibusiso.fraud.contracts.ErrorCode;
 
 public final class ApiFailure extends RuntimeException {
@@ -72,13 +73,21 @@ public final class ApiFailure extends RuntimeException {
 
     public ApiFailure withValidationError(ValidationError error) {
         if (status != HttpStatus.UNPROCESSABLE_CONTENT || outcome != Outcome.NOT_ACCEPTED) {
-            throw new IllegalArgumentException("Validation details require a rejected 422 response");
+            throw new IllegalArgumentException(
+                    "Validation details require a rejected 422 response");
         }
-        return new ApiFailure(status, code, retryAfterSeconds, outcome, getCause(),
+        return new ApiFailure(
+                status,
+                code,
+                retryAfterSeconds,
+                outcome,
+                getCause(),
                 java.util.Objects.requireNonNull(error));
     }
 
-    public ValidationError validationError() { return validationError; }
+    public ValidationError validationError() {
+        return validationError;
+    }
 
     public String outcome() {
         return outcome.name();

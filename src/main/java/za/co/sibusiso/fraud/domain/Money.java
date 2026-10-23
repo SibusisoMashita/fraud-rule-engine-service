@@ -1,8 +1,9 @@
 package za.co.sibusiso.fraud.domain;
 
-import java.math.BigDecimal;
 import za.co.sibusiso.fraud.domain.TransactionValidationException.Field;
 import za.co.sibusiso.fraud.domain.TransactionValidationException.Reason;
+
+import java.math.BigDecimal;
 
 public record Money(String currency, BigDecimal amount) {
     public Money {
@@ -11,8 +12,10 @@ public record Money(String currency, BigDecimal amount) {
     }
 
     public static Money parse(String currency, String amount) {
-        return new Money(currency, TransactionValidationException.validate(
-                Field.AMOUNT, Reason.INVALID_AMOUNT, () -> ContractChecks.amount(amount)));
+        return new Money(
+                currency,
+                TransactionValidationException.validate(
+                        Field.AMOUNT, Reason.INVALID_AMOUNT, () -> ContractChecks.amount(amount)));
     }
 
     private static String validateCurrency(String value) {

@@ -1,17 +1,21 @@
 package za.co.sibusiso.fraud.policy.definition;
 
-import java.time.Instant;
-import java.util.Map;
+import static org.assertj.core.api.Assertions.*;
+
+import static za.co.sibusiso.fraud.domain.TransactionEligibility.*;
+
 import org.junit.jupiter.api.Test;
+
 import za.co.sibusiso.fraud.domain.*;
 import za.co.sibusiso.fraud.domain.TransactionEvent.*;
 
-import static org.assertj.core.api.Assertions.*;
-import static za.co.sibusiso.fraud.domain.TransactionEligibility.*;
+import java.time.Instant;
+import java.util.Map;
 
 class PolicyEligibilityTest {
-    private final CurrencyPolicy currencies = new CurrencyPolicy(Map.of("ZAR",
-            new CurrencyPolicy.Bounds(2, new PolicyAmount("999.99"))));
+    private final CurrencyPolicy currencies =
+            new CurrencyPolicy(
+                    Map.of("ZAR", new CurrencyPolicy.Bounds(2, new PolicyAmount("999.99"))));
     private final IngestPolicy ingest = new IngestPolicy(3600, 120);
     private final Instant now = EventTime.parse("2026-10-15T12:00:00Z");
 
@@ -32,8 +36,18 @@ class PolicyEligibilityTest {
     }
 
     private TransactionEligibility check(Instant occurredAt) {
-        var event = new TransactionEvent("event-1", "customer-1", "card-1", Type.CARD_PURCHASE,
-                Status.BOOKED, Channel.ECOMMERCE, Money.parse("ZAR", "1.00"), "GROCERIES", occurredAt, null);
+        var event =
+                new TransactionEvent(
+                        "event-1",
+                        "customer-1",
+                        "card-1",
+                        Type.CARD_PURCHASE,
+                        Status.BOOKED,
+                        Channel.ECOMMERCE,
+                        Money.parse("ZAR", "1.00"),
+                        "GROCERIES",
+                        occurredAt,
+                        null);
         return ingest.checkNewEvent(event, currencies, now);
     }
 }

@@ -1,5 +1,20 @@
 package za.co.sibusiso.fraud.evaluation.application;
 
+import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.json.JsonMapper;
+
+import za.co.sibusiso.fraud.configuration.ServiceLimits;
+import za.co.sibusiso.fraud.contracts.CanonicalJson;
+import za.co.sibusiso.fraud.contracts.ErrorCode;
+import za.co.sibusiso.fraud.domain.EventTime;
+import za.co.sibusiso.fraud.evaluation.FlowFailure;
+import za.co.sibusiso.fraud.policy.ActivePolicyProvider;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -7,18 +22,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.LongSupplier;
-import org.springframework.context.annotation.Profile;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.databind.DeserializationFeature;
-import tools.jackson.databind.json.JsonMapper;
-import za.co.sibusiso.fraud.configuration.ServiceLimits;
-import za.co.sibusiso.fraud.contracts.CanonicalJson;
-import za.co.sibusiso.fraud.contracts.ErrorCode;
-import za.co.sibusiso.fraud.domain.EventTime;
-import za.co.sibusiso.fraud.evaluation.FlowFailure;
-import za.co.sibusiso.fraud.policy.ActivePolicyProvider;
 
 @Service
 @Profile("!migrate & !policy-admin")

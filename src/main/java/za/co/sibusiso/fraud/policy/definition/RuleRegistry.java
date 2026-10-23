@@ -1,13 +1,14 @@
 package za.co.sibusiso.fraud.policy.definition;
 
+import za.co.sibusiso.fraud.domain.ContractChecks;
+import za.co.sibusiso.fraud.domain.EvaluationOutcome;
+import za.co.sibusiso.fraud.domain.RuleId;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.TreeMap;
-import za.co.sibusiso.fraud.domain.ContractChecks;
-import za.co.sibusiso.fraud.domain.EvaluationOutcome;
-import za.co.sibusiso.fraud.domain.RuleId;
 
 public record RuleRegistry(Map<String, RuleDefinition<?>> definitions) {
     public RuleRegistry {

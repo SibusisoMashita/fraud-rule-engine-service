@@ -1,15 +1,9 @@
 package za.co.sibusiso.fraud.evaluation.persistence;
 
-import java.math.BigDecimal;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.util.LinkedHashMap;
-import java.util.Optional;
-import java.util.UUID;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+
 import za.co.sibusiso.fraud.contracts.CanonicalJson;
 import za.co.sibusiso.fraud.contracts.CanonicalTransaction;
 import za.co.sibusiso.fraud.domain.EvaluationOutcome;
@@ -22,6 +16,14 @@ import za.co.sibusiso.fraud.evaluation.history.LocationQuery;
 import za.co.sibusiso.fraud.evaluation.history.SmallPaymentsHistory;
 import za.co.sibusiso.fraud.evaluation.history.SmallPaymentsQuery;
 import za.co.sibusiso.fraud.ingress.security.Caller;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
+import java.util.Optional;
+import java.util.UUID;
 
 @Repository
 @Profile("!migrate & !policy-admin")

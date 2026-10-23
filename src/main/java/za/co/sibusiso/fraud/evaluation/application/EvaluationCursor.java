@@ -1,5 +1,21 @@
 package za.co.sibusiso.fraud.evaluation.application;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.json.JsonMapper;
+
+import za.co.sibusiso.fraud.configuration.ServiceLimits;
+import za.co.sibusiso.fraud.contracts.CanonicalJson;
+import za.co.sibusiso.fraud.contracts.ErrorCode;
+import za.co.sibusiso.fraud.domain.ContractChecks;
+import za.co.sibusiso.fraud.domain.EventTime;
+import za.co.sibusiso.fraud.evaluation.FlowFailure;
+
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
@@ -7,21 +23,9 @@ import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
+
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Profile;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Component;
-import tools.jackson.databind.DeserializationFeature;
-import tools.jackson.databind.MapperFeature;
-import tools.jackson.databind.json.JsonMapper;
-import za.co.sibusiso.fraud.configuration.ServiceLimits;
-import za.co.sibusiso.fraud.contracts.CanonicalJson;
-import za.co.sibusiso.fraud.contracts.ErrorCode;
-import za.co.sibusiso.fraud.domain.ContractChecks;
-import za.co.sibusiso.fraud.domain.EventTime;
-import za.co.sibusiso.fraud.evaluation.FlowFailure;
 
 /** Signed navigation state, never an authorization credential. Shared by all replicas. */
 @Component

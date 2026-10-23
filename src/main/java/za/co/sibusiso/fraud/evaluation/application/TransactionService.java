@@ -1,6 +1,5 @@
 package za.co.sibusiso.fraud.evaluation.application;
 
-import java.util.function.LongSupplier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
@@ -8,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionException;
 import org.springframework.transaction.TransactionSystemException;
+
 import za.co.sibusiso.fraud.contracts.CanonicalTransaction;
 import za.co.sibusiso.fraud.contracts.ErrorCode;
 import za.co.sibusiso.fraud.domain.ContractChecks;
@@ -15,6 +15,8 @@ import za.co.sibusiso.fraud.domain.TransactionEvent;
 import za.co.sibusiso.fraud.evaluation.FlowFailure;
 import za.co.sibusiso.fraud.ingress.security.Caller;
 import za.co.sibusiso.fraud.policy.PolicyUnavailableException;
+
+import java.util.function.LongSupplier;
 
 /** Nontransactional coordinator; recovery queries run only after the write proxy finishes. */
 @Service

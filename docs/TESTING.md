@@ -10,7 +10,15 @@ Run these commands from the repository root. Java tests need JDK 21 and a runnin
 ./mvnw -B -ntp verify
 ```
 
-`verify` runs the Java unit, contract and integration tests, then packages the application. If Testcontainers cannot find your Docker engine, check the [Docker context setup](OPERATIONS.md#testcontainers-docker-context).
+`verify` runs the Java unit, contract and integration tests, packages the application and checks Java formatting. If Testcontainers cannot find your Docker engine, check the [Docker context setup](OPERATIONS.md#testcontainers-docker-context).
+
+Production and test Java use pinned Spotless and google-java-format versions with the four-space AOSP style. To format your changes before verification:
+
+```sh
+./mvnw -B -ntp spotless:apply
+```
+
+Spotless invokes the official formatter CLI because these pinned versions have incompatible Java APIs. Maven downloads the formatter automatically; no separate installation is needed.
 
 To check the built Docker image and the complete local lifecycle:
 
@@ -129,7 +137,7 @@ These figures apply to this workload and environment. They do not establish maxi
 
 ## CI and reports
 
-[GitHub Actions](../.github/workflows/verify.yaml) runs the helper and Java suites, Docker build/smoke, the load-balancer/autoscaling checks, recovery and legacy migration. Manual workflow dispatch can also run the full capacity suite. A separate job runs the source, dependency, deployment-image, fault-proxy and secret scans. There is no standalone formatter or SAST engine.
+[GitHub Actions](../.github/workflows/verify.yaml) runs the helper and Java suites, formatting checks, Docker build/smoke, the load-balancer/autoscaling checks, recovery and legacy migration. Manual workflow dispatch can also run the full capacity suite. A separate job runs the source, dependency, deployment-image, fault-proxy and secret scans. There is no standalone SAST engine.
 
 CI keeps operational/scaling results and bounded failure logs, with generated test credentials redacted. It does not upload raw scanner secret findings. Reports identify the command, commit or artifact digest, dependency versions, fixture/policy hashes, environment, UTC time and outcome. Clean-clone runtime checks are recorded separately from CI build success.
 

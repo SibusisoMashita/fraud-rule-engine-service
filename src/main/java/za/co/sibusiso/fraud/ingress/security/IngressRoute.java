@@ -1,6 +1,7 @@
 package za.co.sibusiso.fraud.ingress.security;
 
 import org.springframework.http.HttpMethod;
+
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.ingress.ApiPaths;
 
@@ -31,10 +32,12 @@ public enum IngressRoute {
         return resolve(method, path, false);
     }
 
-    public static IngressRoute resolve(String method, String path, boolean policyManagementEnabled) {
+    public static IngressRoute resolve(
+            String method, String path, boolean policyManagementEnabled) {
         if (policyManagementEnabled
                 && ((path.equals(ApiPaths.ADMIN_POLICY)
-                                && (HttpMethod.GET.matches(method) || HttpMethod.PUT.matches(method)))
+                                && (HttpMethod.GET.matches(method)
+                                        || HttpMethod.PUT.matches(method)))
                         || (path.equals(ApiPaths.ADMIN_POLICY_VALIDATE)
                                 && HttpMethod.POST.matches(method)))) {
             return POLICY_ADMIN;
