@@ -248,14 +248,16 @@ If migration exits nonzero, Compose blocks application startup. Inspect the migr
 
 ## Testcontainers Docker context
 
-Maven integration tests need JDK 21 and access to Docker. If your Docker context uses a non-default Unix socket, export it before running the Maven command from [Testing](TESTING.md#run-the-tests):
+Maven integration tests need JDK 21 and a Docker-compatible engine. Select the intended context with `docker context use <name>` and check `docker info` before running Maven. If that context uses a non-default Unix socket, export it before the test command from [Testing](TESTING.md#run-the-tests):
 
 ```sh
 export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 ```
 
-These settings describe the local Unix-socket setup. If Docker is unavailable, integration tests fail rather than silently skipping.
+These variables locate the host socket and the socket mounted inside Testcontainers' helper containers; their paths can differ. If Docker is unavailable, integration tests fail rather than silently skipping.
+
+For Rancher Desktop, select the **Moby (dockerd)** engine. On macOS/Linux, follow [Rancher's Testcontainers guide](https://docs.rancherdesktop.io/how-to-guides/using-testcontainers/) to set `TESTCONTAINERS_HOST_OVERRIDE` to the VM address for your network setup before Maven. WSL2 users should enable their distribution's integration and use that guide's WSL2 instructions. Local verification for this change uses Docker Desktop; Rancher Desktop has not been tested here.
 
 ## Operational verification
 

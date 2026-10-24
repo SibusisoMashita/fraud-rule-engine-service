@@ -1,6 +1,7 @@
 package za.co.sibusiso.fraud.policy.management;
 
 import com.zaxxer.hikari.HikariDataSource;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /** Owns its restricted connection pool without replacing the runtime datasource. */
@@ -19,10 +20,16 @@ public final class JdbcPolicyWriter implements AutoCloseable {
         // The database function owns the lock, revision check and complete audit write.
         return jdbc.queryForObject(
                 "SELECT revision, policy_hash FROM fraud.activate_policy_if_revision(?, ?, ?, ?)",
-                (row, index) -> new Activation(row.getLong("revision"), row.getString("policy_hash")),
-                hash, document, revision, principalId);
+                (row, index) ->
+                        new Activation(row.getLong("revision"), row.getString("policy_hash")),
+                hash,
+                document,
+                revision,
+                principalId);
     }
 
     @Override
-    public void close() { pool.close(); }
+    public void close() {
+        pool.close();
+    }
 }

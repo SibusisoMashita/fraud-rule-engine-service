@@ -1,8 +1,5 @@
 package za.co.sibusiso.fraud.ingress;
 
-import java.io.IOException;
-import java.util.Objects;
-import java.util.Properties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ClassPathResource;
@@ -10,7 +7,12 @@ import org.springframework.http.CacheControl;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
+
+import java.io.IOException;
+import java.util.Objects;
+import java.util.Properties;
 
 /** Serve the maintained contract and pinned UI locally; no generated duplicate specification. */
 @Configuration

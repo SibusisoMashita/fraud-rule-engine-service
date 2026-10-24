@@ -1,9 +1,7 @@
 package za.co.sibusiso.fraud.ingress.request;
 
-import java.time.Instant;
-import java.util.Map;
-import java.util.Set;
 import org.springframework.http.HttpStatus;
+
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.contracts.ErrorCode;
 import za.co.sibusiso.fraud.domain.ContractChecks;
@@ -11,6 +9,10 @@ import za.co.sibusiso.fraud.domain.EvaluationOutcome.Decision;
 import za.co.sibusiso.fraud.domain.EventTime;
 import za.co.sibusiso.fraud.evaluation.application.EvaluationQuery;
 import za.co.sibusiso.fraud.ingress.error.ApiFailure;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.Set;
 
 public final class EvaluationQueryDecoder {
     private static final Set<String> FIELDS =

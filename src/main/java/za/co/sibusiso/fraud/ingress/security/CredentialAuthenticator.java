@@ -1,15 +1,17 @@
 package za.co.sibusiso.fraud.ingress.security;
 
+import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+
+import za.co.sibusiso.fraud.contracts.ErrorCode;
+import za.co.sibusiso.fraud.ingress.error.ApiFailure;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.regex.Pattern;
-import org.springframework.context.annotation.Profile;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Component;
-import za.co.sibusiso.fraud.contracts.ErrorCode;
-import za.co.sibusiso.fraud.ingress.error.ApiFailure;
 
 @Component
 @Profile("!migrate & !policy-admin")

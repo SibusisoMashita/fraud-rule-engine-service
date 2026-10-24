@@ -1,19 +1,14 @@
 package za.co.sibusiso.fraud.evaluation.application;
 
-import java.math.BigDecimal;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.UUID;
-import java.util.function.LongSupplier;
-import java.util.function.Supplier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.contracts.ErrorCode;
+import za.co.sibusiso.fraud.domain.EvaluationOutcome;
 import za.co.sibusiso.fraud.domain.EventTime;
 import za.co.sibusiso.fraud.domain.TransactionEligibility;
 import za.co.sibusiso.fraud.domain.TransactionEvent;
@@ -26,29 +21,34 @@ import za.co.sibusiso.fraud.evaluation.history.LocationQuery;
 import za.co.sibusiso.fraud.evaluation.history.SmallPaymentsHistory;
 import za.co.sibusiso.fraud.evaluation.history.SmallPaymentsQuery;
 import za.co.sibusiso.fraud.evaluation.rules.FraudRule;
-import za.co.sibusiso.fraud.evaluation.rules.RuleEngine;
+import za.co.sibusiso.fraud.evaluation.rules.PreparedPolicy;
+import za.co.sibusiso.fraud.evaluation.rules.RuleEvaluationException;
 import za.co.sibusiso.fraud.ingress.security.Caller;
 import za.co.sibusiso.fraud.policy.ActivePolicyProvider;
-import za.co.sibusiso.fraud.policy.definition.PolicySnapshot;
+
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.UUID;
+import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 @Service
 @Profile("!migrate & !policy-admin")
 public class TransactionalEvaluation implements EvaluationWriter {
     private final TransactionStore store;
     private final ActivePolicyProvider policies;
-    private final RuleEngine engine;
     private final ServiceLimits limits;
     private final EvaluatorBuild build;
 
     public TransactionalEvaluation(
             TransactionStore store,
             ActivePolicyProvider policies,
-            RuleEngine engine,
             ServiceLimits limits,
             EvaluatorBuild build) {
         this.store = store;
         this.policies = policies;
-        this.engine = engine;
         this.limits = limits;
         this.build = build;
     }
@@ -56,7 +56,7 @@ public class TransactionalEvaluation implements EvaluationWriter {
     @Override
     @Transactional(
             isolation = Isolation.READ_COMMITTED,
-            rollbackFor = Exception.class,
+            rollbackFor = RuleEvaluationException.class,
             timeoutString = "${fraud.transaction-timeout-seconds}")
     public Submission write(
             Caller caller,
@@ -64,10 +64,9 @@ public class TransactionalEvaluation implements EvaluationWriter {
             String hash,
             LongSupplier remaining,
             Attempt attempt)
-            throws Exception {
+            throws RuleEvaluationException {
         var budget = new WorkBudget(remaining, limits.operations());
-        change(budget, () -> store.createCustomer(caller.scope(), event.customerId()));
-        var state = sql(budget, () -> store.lockCustomer(caller.scope(), event.customerId()));
+        var state = lockCustomer(caller, event, budget);
         var replay = sql(budget, () -> store.find(caller.scope(), event.eventId()));
         if (replay.isPresent()) {
             var result = TransactionService.compare(replay.orElseThrow(), hash);
@@ -75,6 +74,31 @@ public class TransactionalEvaluation implements EvaluationWriter {
             return new Submission(false, result);
         }
 
+        requireInstrumentOwner(caller, event, budget);
+        Instant wallTime = EventTime.validate(sql(budget, store::databaseTime));
+        Instant acceptedAt = acceptanceTime(wallTime, state);
+        var policy = sql(budget, policies::prepared);
+        requireEligible(event, policy, wallTime);
+
+        long sequence = Math.addExact(state.sequence(), 1);
+        change(budget, () -> store.insertEvent(caller, event, hash, acceptedAt, sequence));
+        var outcome = evaluateRules(caller, event, policy, acceptedAt, state.sequence(), budget);
+        persistEvaluation(caller, event, policy, acceptedAt, state.sequence(), outcome, budget);
+        change(
+                budget,
+                () -> store.advance(caller.scope(), event.customerId(), acceptedAt, sequence));
+        var result = sql(budget, () -> store.find(caller.scope(), event.eventId())).orElseThrow();
+        prepareCommit(budget, attempt);
+        return new Submission(true, result);
+    }
+
+    private TransactionStore.State lockCustomer(
+            Caller caller, TransactionEvent event, WorkBudget budget) {
+        change(budget, () -> store.createCustomer(caller.scope(), event.customerId()));
+        return sql(budget, () -> store.lockCustomer(caller.scope(), event.customerId()));
+    }
+
+    private void requireInstrumentOwner(Caller caller, TransactionEvent event, WorkBudget budget) {
         String owner =
                 sql(
                         budget,
@@ -84,21 +108,39 @@ public class TransactionalEvaluation implements EvaluationWriter {
         if (!owner.equals(event.customerId())) {
             throw new FlowFailure(HttpStatus.CONFLICT, ErrorCode.INSTRUMENT_OWNER_CONFLICT);
         }
-        Instant wallTime = EventTime.validate(sql(budget, store::databaseTime));
-        Instant acceptedAt = acceptanceTime(wallTime, state);
-        var policy = sql(budget, policies::current);
-        var eligibility = policy.ingest().checkNewEvent(event, policy.currencies(), wallTime);
+    }
+
+    private void requireEligible(TransactionEvent event, PreparedPolicy policy, Instant wallTime) {
+        var snapshot = policy.snapshot();
+        var eligibility = snapshot.ingest().checkNewEvent(event, snapshot.currencies(), wallTime);
         if (eligibility != TransactionEligibility.ELIGIBLE) {
             throw new FlowFailure(HttpStatus.UNPROCESSABLE_CONTENT, eligibility.name());
         }
+    }
 
-        long sequence = Math.addExact(state.sequence(), 1);
-        change(budget, () -> store.insertEvent(caller, event, hash, acceptedAt, sequence));
-        var history = loadHistory(caller, event, policy, acceptedAt, state.sequence(), budget);
-        var context = new FraudRule.Context(acceptedAt, state.sequence(), history);
-        var outcome = engine.evaluate(event, policy, context, limits.api());
+    private EvaluationOutcome evaluateRules(
+            Caller caller,
+            TransactionEvent event,
+            PreparedPolicy policy,
+            Instant acceptedAt,
+            long highWatermark,
+            WorkBudget budget)
+            throws RuleEvaluationException {
+        var history = loadHistory(caller, event, policy, acceptedAt, highWatermark, budget);
+        var context = new FraudRule.Context(acceptedAt, highWatermark, history);
+        var outcome = policy.evaluate(event, context, limits.api());
         budget.remaining();
+        return outcome;
+    }
 
+    private void persistEvaluation(
+            Caller caller,
+            TransactionEvent event,
+            PreparedPolicy policy,
+            Instant acceptedAt,
+            long highWatermark,
+            EvaluationOutcome outcome,
+            WorkBudget budget) {
         Instant evaluated = sql(budget, store::databaseTime);
         Instant evaluatedAt = evaluated.isBefore(acceptedAt) ? acceptedAt : evaluated;
         change(
@@ -108,17 +150,11 @@ public class TransactionalEvaluation implements EvaluationWriter {
                                 caller.scope(),
                                 event.eventId(),
                                 UUID.randomUUID(),
-                                policy.policyHash(),
+                                policy.snapshot().policyHash(),
                                 build.id(),
-                                state.sequence(),
+                                highWatermark,
                                 evaluatedAt,
                                 outcome));
-        change(
-                budget,
-                () -> store.advance(caller.scope(), event.customerId(), acceptedAt, sequence));
-        var result = sql(budget, () -> store.find(caller.scope(), event.eventId())).orElseThrow();
-        prepareCommit(budget, attempt);
-        return new Submission(true, result);
     }
 
     private Instant acceptanceTime(Instant wallTime, TransactionStore.State state) {
@@ -137,12 +173,12 @@ public class TransactionalEvaluation implements EvaluationWriter {
     private HistoryFacts loadHistory(
             Caller caller,
             TransactionEvent event,
-            PolicySnapshot policy,
+            PreparedPolicy policy,
             Instant acceptedAt,
             long highWatermark,
             WorkBudget budget) {
         var facts = new LinkedHashMap<HistoryQuery, BigDecimal>();
-        for (var query : engine.historyQueries(event, policy)) {
+        for (var query : policy.historyQueries(event)) {
             facts.put(
                     query,
                     sql(
@@ -156,7 +192,7 @@ public class TransactionalEvaluation implements EvaluationWriter {
                                             highWatermark)));
         }
         var locations = new LinkedHashMap<LocationQuery, LocationCandidates>();
-        for (var query : engine.locationQueries(event, policy)) {
+        for (var query : policy.locationQueries(event)) {
             locations.put(
                     query,
                     sql(
@@ -169,7 +205,7 @@ public class TransactionalEvaluation implements EvaluationWriter {
                                             highWatermark)));
         }
         var smallPayments = new LinkedHashMap<SmallPaymentsQuery, SmallPaymentsHistory>();
-        for (var query : engine.smallPaymentsQueries(event, policy)) {
+        for (var query : policy.smallPaymentsQueries(event)) {
             smallPayments.put(
                     query,
                     sql(

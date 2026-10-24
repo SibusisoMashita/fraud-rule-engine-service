@@ -1,17 +1,21 @@
 package za.co.sibusiso.fraud.ingress;
 
-import java.io.IOException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+
 import za.co.sibusiso.fraud.contracts.ErrorCode;
 import za.co.sibusiso.fraud.evaluation.FlowFailure;
 import za.co.sibusiso.fraud.ingress.error.ApiFailure;
 import za.co.sibusiso.fraud.ingress.error.ApiFailure.Outcome;
 import za.co.sibusiso.fraud.ingress.error.ApiProblems;
+import za.co.sibusiso.fraud.ingress.error.ValidationError;
+
+import java.io.IOException;
 
 @RestControllerAdvice(assignableTypes = {IngressController.class, PolicyManagementController.class})
 @Profile("!migrate & !policy-admin")
@@ -23,15 +27,18 @@ public final class IngressAdvice {
                 failure.status() == HttpStatus.SERVICE_UNAVAILABLE
                         ? ApiFailure.DEFAULT_RETRY_AFTER_SECONDS
                         : 0;
-        respond(
-                request,
-                response,
+        var problem =
                 new ApiFailure(
                         failure.status(),
                         failure.code(),
                         retryAfterSeconds,
                         failure.unknown() ? Outcome.UNKNOWN : Outcome.NOT_ACCEPTED,
-                        failure));
+                        failure);
+        if (failure.status() == HttpStatus.UNPROCESSABLE_CONTENT && !failure.unknown()) {
+            var error = ValidationError.forEligibility(failure.code());
+            if (error != null) problem = problem.withValidationError(error);
+        }
+        respond(request, response, problem);
     }
 
     @ExceptionHandler(Exception.class)
@@ -67,8 +74,11 @@ public final class IngressAdvice {
                     response,
                     new ApiFailure(
                             HttpStatus.SERVICE_UNAVAILABLE,
-                            Boolean.TRUE.equals(request.getAttribute(PolicyManagementController.POLICY_RESPONSE))
-                                    ? ErrorCode.POLICY_OUTCOME_UNKNOWN : ErrorCode.RESPONSE_OUTCOME_UNKNOWN,
+                            Boolean.TRUE.equals(
+                                            request.getAttribute(
+                                                    PolicyManagementController.POLICY_RESPONSE))
+                                    ? ErrorCode.POLICY_OUTCOME_UNKNOWN
+                                    : ErrorCode.RESPONSE_OUTCOME_UNKNOWN,
                             ApiFailure.DEFAULT_RETRY_AFTER_SECONDS,
                             outcome,
                             failure));
@@ -97,7 +107,8 @@ public final class IngressAdvice {
 
     private static Outcome financialOutcome(HttpServletRequest request) {
         return (Boolean.TRUE.equals(request.getAttribute(IngressController.FINANCIAL_RESPONSE))
-                        || Boolean.TRUE.equals(request.getAttribute(PolicyManagementController.POLICY_RESPONSE)))
+                        || Boolean.TRUE.equals(
+                                request.getAttribute(PolicyManagementController.POLICY_RESPONSE)))
                 ? Outcome.UNKNOWN
                 : Outcome.NOT_ACCEPTED;
     }

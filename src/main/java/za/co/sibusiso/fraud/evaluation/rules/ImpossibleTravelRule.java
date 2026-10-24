@@ -1,12 +1,5 @@
 package za.co.sibusiso.fraud.evaluation.rules;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Duration;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
 import za.co.sibusiso.fraud.domain.ContractChecks;
 import za.co.sibusiso.fraud.domain.RuleResult;
 import za.co.sibusiso.fraud.domain.TransactionEvent;
@@ -16,6 +9,14 @@ import za.co.sibusiso.fraud.evaluation.history.LocationQuery;
 import za.co.sibusiso.fraud.policy.definition.BuiltInRuleSettings.ImpossibleTravel;
 import za.co.sibusiso.fraud.policy.definition.BuiltInRules;
 import za.co.sibusiso.fraud.policy.definition.RuleDefinition;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
 public final class ImpossibleTravelRule implements FraudRule<ImpossibleTravel> {
     private static final double NANOS_PER_SECOND = 1_000_000_000.0;

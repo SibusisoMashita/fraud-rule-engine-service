@@ -32,7 +32,7 @@ Checks run through the proxy and cover both ready instances, unavailable/unready
 
 ## Separate assessment UI
 
-The UI is a separate React and TypeScript project. Its planned screens are transaction scenarios, saved evaluations and policy editing. It uses the real API and shares its exact-decimal, permission and recovery contracts; Docker scaling controls stay in the existing scripts.
+The delivered [assessment UI](https://github.com/SibusisoMashita/fraud-rule-engine-ui) is a separate React and TypeScript project. Its three screens cover transaction scenarios, saved evaluations and policy editing. It uses the real API and shares its exact-decimal, permission and recovery contracts; Docker scaling controls stay in the existing scripts.
 
 | Check-in | Deliverable | Verification |
 | --- | --- | --- |
@@ -41,7 +41,7 @@ The UI is a separate React and TypeScript project. Its planned screens are trans
 | Transaction playground | Editable scenarios for all five rules, saved evidence and replay/recovery | Sequential history, exact decimals, conflicts and uncertain outcomes |
 | Policy editor | Shared form/JSON draft, validation, change preview and activation | Concurrent edits, live cross-instance policy changes and fresh-clone browser walkthrough |
 
-The backend administration API is the first check-in. The frontend screens and repository remain planned until their respective changes are delivered. Existing permissions and the ordinary quickstart remain the default.
+These four check-ins are delivered. The [UI README](https://github.com/SibusisoMashita/fraud-rule-engine-ui#readme) and [its CI](https://github.com/SibusisoMashita/fraud-rule-engine-ui/actions) describe frontend setup and verification. Backend administration remains opt-in; existing permissions and the ordinary quickstart remain the default.
 
 ## Future autoscaling change
 

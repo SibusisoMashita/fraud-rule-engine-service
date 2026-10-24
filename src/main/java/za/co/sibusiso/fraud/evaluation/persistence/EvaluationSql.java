@@ -2,8 +2,10 @@ package za.co.sibusiso.fraud.evaluation.persistence;
 
 /** One response representation for immutable evaluations in point and page reads. */
 final class EvaluationSql {
-    private EvaluationSql() { }
-    static final String DOCUMENT="""
+    private EvaluationSql() {}
+
+    static final String DOCUMENT =
+            """
             jsonb_build_object('id', e.id, 'eventId', e.event_id, 'policyHash', e.policy_hash,
                         'buildId', e.build_id, 'decision', e.decision, 'coverage', e.coverage,
                         'acceptedAt', to_char(t.accepted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),

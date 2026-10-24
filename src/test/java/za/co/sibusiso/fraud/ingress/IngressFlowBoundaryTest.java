@@ -1,42 +1,71 @@
 package za.co.sibusiso.fraud.ingress;
 
-import java.util.Set;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+
 import za.co.sibusiso.fraud.configuration.ServiceLimits;
 import za.co.sibusiso.fraud.configuration.StrictYaml;
 import za.co.sibusiso.fraud.evaluation.application.TransactionService;
 import za.co.sibusiso.fraud.ingress.error.ApiFailure;
 import za.co.sibusiso.fraud.ingress.security.Caller;
 
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import java.util.Set;
 
 class IngressFlowBoundaryTest {
-    @Test void responseWriteFailureAfterPolicyActivationRequiresInspectionBeforeAnyRetry() throws Exception {
+    @Test
+    void responseWriteFailureAfterPolicyActivationRequiresInspectionBeforeAnyRetry()
+            throws Exception {
         var advice = new IngressAdvice();
         var request = new MockHttpServletRequest("PUT", ApiPaths.ADMIN_POLICY);
         request.setAttribute(PolicyManagementController.POLICY_RESPONSE, true);
         var response = new MockHttpServletResponse();
         advice.unreadable(new java.io.IOException("private write failure"), request, response);
         assertThat(response.getStatus()).isEqualTo(503);
-        assertThat(response.getContentAsString()).contains("POLICY_OUTCOME_UNKNOWN", "UNKNOWN")
+        assertThat(response.getContentAsString())
+                .contains("POLICY_OUTCOME_UNKNOWN", "UNKNOWN")
                 .doesNotContain("NOT_ACCEPTED", "private write failure");
     }
-    @Test void responseWriteFailureAfterFinancialWorkCannotBeReportedAsInvalidUnacceptedInput() throws Exception {
-        var advice=new IngressAdvice();var request=new MockHttpServletRequest();var before=new MockHttpServletResponse();
-        advice.unreadable(new java.io.IOException("read failed"),request,before);assertThat(before.getStatus()).isEqualTo(400);assertThat(before.getContentAsString()).contains("NOT_ACCEPTED");
-        request.setAttribute(IngressController.FINANCIAL_RESPONSE,true);var after=new MockHttpServletResponse();
-        advice.unreadable(new java.io.IOException("write failed"),request,after);assertThat(after.getStatus()).isEqualTo(503);assertThat(after.getContentAsString()).contains("UNKNOWN").doesNotContain("NOT_ACCEPTED");
+
+    @Test
+    void responseWriteFailureAfterFinancialWorkCannotBeReportedAsInvalidUnacceptedInput()
+            throws Exception {
+        var advice = new IngressAdvice();
+        var request = new MockHttpServletRequest();
+        var before = new MockHttpServletResponse();
+        advice.unreadable(new java.io.IOException("read failed"), request, before);
+        assertThat(before.getStatus()).isEqualTo(400);
+        assertThat(before.getContentAsString()).contains("NOT_ACCEPTED");
+        request.setAttribute(IngressController.FINANCIAL_RESPONSE, true);
+        var after = new MockHttpServletResponse();
+        advice.unreadable(new java.io.IOException("write failed"), request, after);
+        assertThat(after.getStatus()).isEqualTo(503);
+        assertThat(after.getContentAsString()).contains("UNKNOWN").doesNotContain("NOT_ACCEPTED");
     }
-    @Test void tightenedIdentifierConfigurationAppliesToReadsBeforeAnyLookup() {
-        var yaml=new StrictYaml();var limits=yaml.read(yaml.readText(new ClassPathResource("config/service.example.yaml"))
-                .replace("maxIdentifierLength: 128","maxIdentifierLength: 3"),ServiceLimits.class);
-        var service=mock(TransactionService.class);var controller=new IngressController(limits,service,mock(za.co.sibusiso.fraud.evaluation.application.EvaluationQueryService.class));
-        var caller=new Caller("producer","scope",Set.of(Caller.Role.READ),Set.of(),1);
-        assertThatThrownBy(()->controller.get("four",caller,new MockHttpServletRequest())).isInstanceOf(ApiFailure.class);
+
+    @Test
+    void tightenedIdentifierConfigurationAppliesToReadsBeforeAnyLookup() {
+        var yaml = new StrictYaml();
+        var limits =
+                yaml.read(
+                        yaml.readText(new ClassPathResource("config/service.example.yaml"))
+                                .replace("maxIdentifierLength: 128", "maxIdentifierLength: 3"),
+                        ServiceLimits.class);
+        var service = mock(TransactionService.class);
+        var controller =
+                new IngressController(
+                        limits,
+                        service,
+                        mock(
+                                za.co.sibusiso.fraud.evaluation.application.EvaluationQueryService
+                                        .class));
+        var caller = new Caller("producer", "scope", Set.of(Caller.Role.READ), Set.of(), 1);
+        assertThatThrownBy(() -> controller.get("four", caller, new MockHttpServletRequest()))
+                .isInstanceOf(ApiFailure.class);
         verifyNoInteractions(service);
     }
 }

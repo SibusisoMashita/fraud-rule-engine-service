@@ -1,10 +1,11 @@
 package za.co.sibusiso.fraud.configuration;
 
-import java.util.Map;
-import java.util.Objects;
 import za.co.sibusiso.fraud.domain.ContractChecks;
 import za.co.sibusiso.fraud.domain.EvaluationOutcome;
 import za.co.sibusiso.fraud.domain.RuleResult;
+
+import java.util.Map;
+import java.util.Objects;
 
 public record ServiceLimits(int schemaVersion, Api api, Operations operations) {
     public ServiceLimits {

@@ -1,11 +1,13 @@
 package za.co.sibusiso.fraud.policy.definition;
 
-import java.util.Map;
-import java.util.TreeMap;
 import org.springframework.core.io.Resource;
+
 import za.co.sibusiso.fraud.configuration.StrictYaml;
 import za.co.sibusiso.fraud.domain.ContractChecks;
 import za.co.sibusiso.fraud.domain.RuleId;
+
+import java.util.Map;
+import java.util.TreeMap;
 
 public final class PolicyLoader {
     private final StrictYaml yaml;
@@ -16,21 +18,36 @@ public final class PolicyLoader {
         this.registry = registry;
     }
 
-    public PolicySnapshot read(Resource resource) { return bind(yaml.read(resource, Document.class)); }
-    public PolicySnapshot read(String text) { return bind(yaml.read(text, Document.class)); }
+    public PolicySnapshot read(Resource resource) {
+        return bind(yaml.read(resource, Document.class));
+    }
 
-    public PolicySnapshot read(Document document) { return bind(document); }
+    public PolicySnapshot read(String text) {
+        return bind(yaml.read(text, Document.class));
+    }
+
+    public PolicySnapshot read(Document document) {
+        return bind(document);
+    }
 
     private PolicySnapshot bind(Document input) {
-        ContractChecks.require(input.schemaVersion() == 1 && input.canonicalizationVersion() == 1,
+        ContractChecks.require(
+                input.schemaVersion() == 1 && input.canonicalizationVersion() == 1,
                 "Unsupported policy or canonicalization version");
-        ContractChecks.require(input.rules().keySet().equals(registry.definitions().keySet()),
+        ContractChecks.require(
+                input.rules().keySet().equals(registry.definitions().keySet()),
                 "Policy must configure exactly the registered rule keys; disable rules explicitly");
         var currencies = new CurrencyPolicy(input.supportedCurrencies());
         var rules = new TreeMap<RuleId, PolicySnapshot.ConfiguredRule<?>>();
-        registry.definitions().forEach((key, definition) -> rules.put(definition.id(),
-                bindRule(definition, input.rules().get(key), currencies)));
-        ContractChecks.require(rules.values().stream().anyMatch(rule -> rule.settings().enabled()), "All-disabled policy is invalid");
+        registry.definitions()
+                .forEach(
+                        (key, definition) ->
+                                rules.put(
+                                        definition.id(),
+                                        bindRule(definition, input.rules().get(key), currencies)));
+        ContractChecks.require(
+                rules.values().stream().anyMatch(rule -> rule.settings().enabled()),
+                "All-disabled policy is invalid");
         return new PolicySnapshot(currencies, input.ingest(), rules);
     }
 
@@ -42,6 +59,10 @@ public final class PolicyLoader {
         return new PolicySnapshot.ConfiguredRule<>(definition, settings);
     }
 
-    public record Document(int schemaVersion, int canonicalizationVersion,
-            Map<String, CurrencyPolicy.Bounds> supportedCurrencies, IngestPolicy ingest, Map<String, Object> rules) { }
+    public record Document(
+            int schemaVersion,
+            int canonicalizationVersion,
+            Map<String, CurrencyPolicy.Bounds> supportedCurrencies,
+            IngestPolicy ingest,
+            Map<String, Object> rules) {}
 }

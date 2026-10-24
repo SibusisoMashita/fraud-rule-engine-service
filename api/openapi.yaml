@@ -849,6 +849,13 @@ components:
           enum:
           - NOT_ACCEPTED
           - UNKNOWN
+        errors:
+          type: array
+          description: Present for transaction domain or new-event policy validation failures. Contains one deterministic, safe field error; submitted values and parser diagnostics are never returned.
+          minItems: 1
+          maxItems: 1
+          items:
+            $ref: '#/components/schemas/ValidationError'
       required:
       - type
       - title
@@ -857,6 +864,55 @@ components:
       - correlationId
       - retryable
       - outcome
+    ValidationError:
+      type: object
+      additionalProperties: false
+      properties:
+        field:
+          type: string
+          maxLength: 64
+          enum:
+          - eventId
+          - customerId
+          - instrumentId
+          - transactionType
+          - status
+          - channel
+          - amount
+          - currency
+          - category
+          - occurredAt
+          - physicalLocation.latitude
+          - physicalLocation.longitude
+          - physicalLocation.accuracyKm
+          - physicalLocation.source
+          - physicalLocation.city
+          - physicalLocation
+        code:
+          type: string
+          maxLength: 64
+          enum:
+          - INVALID_IDENTIFIER
+          - INVALID_VALUE
+          - INVALID_AMOUNT
+          - INVALID_CURRENCY
+          - INVALID_TEXT
+          - INVALID_TIMESTAMP
+          - INVALID_COORDINATE
+          - INVALID_ACCURACY
+          - TYPE_CHANNEL_MISMATCH
+          - ONLINE_PHYSICAL_LOCATION
+          - LOCATION_SOURCE_CHANNEL_MISMATCH
+          - UNSUPPORTED_CURRENCY
+          - AMOUNT_SCALE
+          - AMOUNT_LIMIT
+          - EVENT_TOO_OLD
+          - EVENT_IN_FUTURE
+        message:
+          type: string
+          maxLength: 160
+          description: Fixed human-readable guidance; never includes a submitted value or exception message.
+      required: [field, code, message]
     Health:
       type: object
       additionalProperties: false
@@ -980,7 +1036,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Problem422:
-      description: New event violates domain/policy, or POLICY_INVALID for an incompatible administrator policy candidate
+      description: New event violates domain/policy, with one safe field error, or POLICY_INVALID for an incompatible administrator policy candidate without transaction field errors
       headers:
         Cache-Control:
           $ref: '#/components/headers/CacheControl'
@@ -990,6 +1046,18 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unprocessable Content
+            status: 422
+            code: INVALID_TRANSACTION
+            correlationId: 5990e7c4-5db3-42f1-b39c-c53cfe833d45
+            retryable: false
+            outcome: NOT_ACCEPTED
+            errors:
+            - field: occurredAt
+              code: INVALID_TIMESTAMP
+              message: Use a real date and time with a UTC offset and at most six fractional-second digits.
     Problem429:
       description: Shared quota exhausted
       headers:

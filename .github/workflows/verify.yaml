@@ -1,7 +1,7 @@
 name: Verify service
 on:
   push:
-    branches: [main]
+    branches: [main, fix/terry-feedback]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -29,6 +29,14 @@ jobs:
         run: python3 -B -m unittest discover -s scripts/verification -p 'test_*.py'
       - name: Build and integration tests
         run: ./mvnw -B -ntp verify
+      - name: Retain Java coverage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: java-coverage
+          path: target/site/jacoco/
+          if-no-files-found: error
+          retention-days: 14
       - name: Build application image
         run: docker compose build app
       - name: Verify Compose lifecycle

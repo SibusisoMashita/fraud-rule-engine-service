@@ -109,7 +109,14 @@ The optional [administrator API](docs/OPERATIONS.md#optional-policy-administrati
 
 ## Run tests
 
-For Java tests, install JDK 21, set `JAVA_HOME` and keep Docker running. Maven is included through the wrapper:
+For Java tests, install JDK 21 and keep Docker running. On macOS, select the installed JDK before testing:
+
+```sh
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export PATH="$JAVA_HOME/bin:$PATH"
+```
+
+Confirm `java -version` reports 21 and `docker info` succeeds. If Docker uses a non-default Unix socket, such as Rancher Desktop, follow [Docker context setup](docs/OPERATIONS.md#testcontainers-docker-context) first. Maven is included through the wrapper:
 
 ```sh
 ./mvnw -B -ntp verify

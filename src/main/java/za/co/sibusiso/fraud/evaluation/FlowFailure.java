@@ -1,6 +1,7 @@
 package za.co.sibusiso.fraud.evaluation;
 
 import org.springframework.http.HttpStatus;
+
 import za.co.sibusiso.fraud.contracts.ErrorCode;
 
 public final class FlowFailure extends RuntimeException {
