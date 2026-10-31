@@ -10,6 +10,12 @@ The rules cover high amounts, transaction velocity, cumulative spend, impossible
 
 Built with Java 21, Spring Boot, PostgreSQL and Redis. Optional HAProxy ingress supports the local scaling demo. The CI badge shows the published `main` branch; [Testing](docs/TESTING.md) records local results and limits.
 
+## Engineering case study
+
+Start with the [case study](docs/CASE_STUDY.md) for the implementation story, interface screenshots and a short walkthrough of transaction safety, replay recovery and versioned policy. The [companion React/TypeScript UI](https://github.com/SibusisoMashita/fraud-rule-engine-ui) makes the API's saved decisions and evidence inspectable.
+
+This project began as a technical assessment. It is a local demonstration using synthetic data, separate from an employer's production payment systems.
+
 ## Quickstart
 
 You need Git, Docker with Compose 2.24.4+, OpenSSL, curl and a POSIX shell (such as bash or zsh). Docker Desktop includes Compose. Downloads need internet access. Java, Maven and Python are not needed for this startup path.
