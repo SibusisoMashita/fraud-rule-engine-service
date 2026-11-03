@@ -44,7 +44,7 @@ import java.sql.SQLException;
 import java.util.Set;
 
 class ApiProblemsDiagnosticsTest {
-    private static final String SECRET = "sensitive-api-key";
+    private static final String SECRET = "sensitive." + "a".repeat(64);
     private static final String PAYLOAD = "sensitive-customer-and-transaction";
     private static final String SQL = "SELECT sensitive_column FROM financial_data";
     private final Logger logger = (Logger) LoggerFactory.getLogger(ApiProblems.class);

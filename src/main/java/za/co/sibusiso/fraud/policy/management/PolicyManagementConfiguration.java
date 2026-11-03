@@ -37,7 +37,7 @@ public class PolicyManagementConfiguration {
         // Use the same validated timeout properties as Boot's runtime pool.
         Binder.get(environment)
                 .bind("spring.datasource.hikari", Bindable.ofInstance(configuration));
-        // Each activation is one atomic SQL call, independent of runtime transaction settings.
+        // The writer owns each activation transaction, independent of runtime transactions.
         configuration.setAutoCommit(true);
         configuration.setJdbcUrl(environment.getRequiredProperty("spring.datasource.url"));
         configuration.setUsername("fraud_policy_api");

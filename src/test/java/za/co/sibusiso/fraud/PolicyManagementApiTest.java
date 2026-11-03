@@ -367,8 +367,10 @@ class PolicyManagementApiTest {
         assertThat(context.getStartupDate()).isEqualTo(startup);
     }
 
-    @Test
-    void corruptInactiveVersionCannotBeReactivatedThroughAValidCandidate() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"schemaVersion: 1", "rules: [unterminated"})
+    void corruptInactiveVersionCannotBeReactivatedThroughAValidCandidate(String corrupt)
+            throws Exception {
         var candidate = (ObjectNode) JSON.readTree(sample());
         ((ObjectNode) candidate.at("/rules/transactionVelocity"))
                 .put(
@@ -379,10 +381,7 @@ class PolicyManagementApiTest {
         // The privileged SQL path can bypass Java validation; keep this bad version inactive.
         database("fraud_policy_admin")
                 .queryForObject(
-                        "SELECT fraud.activate_policy(?, ?, false)",
-                        String.class,
-                        hash,
-                        "schemaVersion: 1");
+                        "SELECT fraud.activate_policy(?, ?, false)", String.class, hash, corrupt);
         activateFromCli(ORIGINAL);
         var before = state();
         assertThat(before.hash()).isNotEqualTo(hash);

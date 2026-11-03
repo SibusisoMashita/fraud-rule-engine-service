@@ -3,6 +3,9 @@ package za.co.sibusiso.fraud.policy.management;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.transaction.TransactionException;
+import org.yaml.snakeyaml.error.YAMLException;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
@@ -70,6 +73,7 @@ public final class PolicyManagementService {
                 | IllegalArgumentException
                 | IllegalStateException
                 | NullPointerException
+                | YAMLException
                 | JacksonException failure) {
             throw new ApiFailure(
                     HttpStatus.SERVICE_UNAVAILABLE,
@@ -94,38 +98,24 @@ public final class PolicyManagementService {
         var candidate = candidate(document);
         budget.run();
         try {
-            // A privileged CLI/database mistake must not be reactivated through the validated API.
-            runtime.queryForList(
-                            "SELECT policy_yaml FROM fraud.policy_versions WHERE policy_hash = ?",
-                            String.class,
-                            candidate.hash())
-                    .forEach(text -> verifiedDocument(text, candidate.hash()));
+            return writer.activate(
+                    candidate.hash(),
+                    candidate.text(),
+                    revision,
+                    caller.principalId(),
+                    activated ->
+                            new Active(
+                                    activated.revision(),
+                                    activated.policyHash(),
+                                    verifiedDocument(
+                                            activated.document(), activated.policyHash())));
         } catch (DataAccessException
+                | CannotCreateTransactionException
                 | IllegalArgumentException
                 | IllegalStateException
                 | NullPointerException
+                | YAMLException
                 | JacksonException failure) {
-            throw new ApiFailure(
-                    HttpStatus.SERVICE_UNAVAILABLE,
-                    ErrorCode.DEPENDENCY_UNAVAILABLE,
-                    ApiFailure.DEFAULT_RETRY_AFTER_SECONDS,
-                    failure);
-        }
-        budget.run();
-        try {
-            var activated =
-                    writer.activate(
-                            candidate.hash(), candidate.text(), revision, caller.principalId());
-            // Versions are immutable: a same-hash no-op/re-activation returns its stored document.
-            var stored =
-                    verifiedDocument(
-                            runtime.queryForObject(
-                                    "SELECT policy_yaml FROM fraud.policy_versions WHERE policy_hash = ?",
-                                    String.class,
-                                    activated.policyHash()),
-                            activated.policyHash());
-            return new Active(activated.revision(), activated.policyHash(), stored);
-        } catch (DataAccessException failure) {
             for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
                 if (cause instanceof SQLException sql && STALE_REVISION.equals(sql.getSQLState()))
                     throw new ApiFailure(
@@ -134,17 +124,13 @@ public final class PolicyManagementService {
                             0,
                             failure);
             }
-            // A failed acknowledgement cannot prove whether the single database call committed.
             throw new ApiFailure(
                     HttpStatus.SERVICE_UNAVAILABLE,
-                    ErrorCode.POLICY_OUTCOME_UNKNOWN,
+                    ErrorCode.DEPENDENCY_UNAVAILABLE,
                     ApiFailure.DEFAULT_RETRY_AFTER_SECONDS,
-                    Outcome.UNKNOWN,
                     failure);
-        } catch (IllegalArgumentException
-                | IllegalStateException
-                | NullPointerException
-                | JacksonException failure) {
+        } catch (TransactionException failure) {
+            // A failed completion acknowledgement cannot prove whether activation committed.
             throw new ApiFailure(
                     HttpStatus.SERVICE_UNAVAILABLE,
                     ErrorCode.POLICY_OUTCOME_UNKNOWN,

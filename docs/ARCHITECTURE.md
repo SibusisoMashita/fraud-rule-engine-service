@@ -78,6 +78,8 @@ The administrator API is disabled by default. When enabled, a separate global `P
 
 The adapter reuses the policy loader and rule-engine verification. Validation is read-only. Activation requires a strong revision ETag through `If-Match`; the database compares that revision while holding the head-row lock. Another activation returns 412, including an A → B → A change. An unchanged policy preserves its revision. The existing CLI and HTTP activation share the same atomic version, pointer and audit update.
 
+HTTP activation reads and verifies the stored document on the writer connection before committing, preserving its original representation for equivalent policies. It returns success only after commit; read or verification failures roll back, while an unacknowledged commit remains an unknown outcome.
+
 A dedicated adapter-owned writer pool authenticates as `fraud_policy_api`; enabling it does not replace the runtime datasource or widen its grants. This role can read policy and call only conditional activation, with no table writes, schema changes or CLI activation permission. Audit retains the database actor and records the authenticated API principal. Requests cannot nominate that actor. An uncertain activation response requires reading current revision/hash before deciding what to do; the server does not retry writes automatically.
 
 [Operations](OPERATIONS.md#optional-policy-administration-api) covers the opt-in Compose overlay, separate credentials and connection budget. The delivered [assessment UI](https://github.com/SibusisoMashita/fraud-rule-engine-ui) is a separate repository with its own setup and verification.

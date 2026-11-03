@@ -5,10 +5,14 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.transaction.TransactionSystemException;
 
 import za.co.sibusiso.fraud.configuration.StrictYaml;
 import za.co.sibusiso.fraud.evaluation.rules.CumulativeSpendRule;
@@ -26,6 +30,7 @@ import za.co.sibusiso.fraud.policy.definition.RuleRegistry;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 
 class PolicyManagementServiceTest {
     private final StrictYaml yaml = new StrictYaml();
@@ -117,9 +122,10 @@ class PolicyManagementServiceTest {
     @Test
     void lostDatabaseAcknowledgementPreservesItsCauseAndReportsAnUnknownOutcome() {
         var cause =
-                new DataAccessResourceFailureException(
+                new TransactionSystemException(
                         "private database diagnostic", new SQLException("private", "08006"));
-        when(writer.activate(anyString(), anyString(), anyLong(), anyString())).thenThrow(cause);
+        when(writer.activate(anyString(), anyString(), anyLong(), anyString(), any()))
+                .thenThrow(cause);
         assertThatThrownBy(() -> service.activate(admin, document(original), 1, () -> {}))
                 .isInstanceOfSatisfying(
                         ApiFailure.class,
@@ -129,7 +135,8 @@ class PolicyManagementServiceTest {
                             assertThat(failure.outcome()).isEqualTo("UNKNOWN");
                             assertThat(failure.getCause()).isSameAs(cause);
                         });
-        verify(writer).activate(anyString(), anyString(), eq(1L), eq(admin.principalId()));
+        verify(writer).activate(anyString(), anyString(), eq(1L), eq(admin.principalId()), any());
+        verifyNoInteractions(runtime);
     }
 
     @Test
@@ -137,7 +144,8 @@ class PolicyManagementServiceTest {
         var cause =
                 new DataAccessResourceFailureException(
                         "stale", new SQLException("revision changed", "P0412"));
-        when(writer.activate(anyString(), anyString(), anyLong(), anyString())).thenThrow(cause);
+        when(writer.activate(anyString(), anyString(), anyLong(), anyString(), any()))
+                .thenThrow(cause);
         assertThatThrownBy(() -> service.activate(admin, document(original), 1, () -> {}))
                 .isInstanceOfSatisfying(
                         ApiFailure.class,
@@ -146,6 +154,83 @@ class PolicyManagementServiceTest {
                             assertThat(failure.outcome()).isEqualTo("NOT_ACCEPTED");
                             assertThat(failure.getCause()).isSameAs(cause);
                         });
+    }
+
+    @Test
+    void responseUsesTheVerifiedStoredRepresentationWithoutAnyRuntimeRead() {
+        var candidate = document(original.replace("25000.00", "25000"));
+        var stored = document(original);
+        String hash = loader.read(candidate).policyHash();
+        returnStored(hash, original);
+
+        var response = service.activate(admin, candidate, 1, () -> {});
+
+        assertThat(response).isEqualTo(new PolicyManagementService.Active(2, hash, stored));
+        verifyNoInteractions(runtime);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"schemaVersion: 1", "rules: [unterminated"})
+    void invalidStoredContentRejectsActivationInsideTheWriterResponseCallback(String stored) {
+        var candidate = document(original);
+        returnStored(loader.read(candidate).policyHash(), stored);
+
+        assertRejectedBeforeCommit(() -> service.activate(admin, candidate, 1, () -> {}));
+        verifyNoInteractions(runtime);
+    }
+
+    @Test
+    void mismatchedStoredHashRejectsActivationInsideTheWriterResponseCallback() {
+        var candidate = document(original);
+        returnStored(loader.read(candidate).policyHash(), original.replace("25000.00", "30000.00"));
+
+        assertRejectedBeforeCommit(() -> service.activate(admin, candidate, 1, () -> {}));
+        verifyNoInteractions(runtime);
+    }
+
+    @Test
+    void rolledBackDatabaseWorkHasAKnownRejectedOutcomeAndPreservesItsCause() {
+        var cause =
+                new DataAccessResourceFailureException(
+                        "private read diagnostic", new SQLException("private", "08006"));
+        when(writer.activate(anyString(), anyString(), anyLong(), anyString(), any()))
+                .thenThrow(cause);
+
+        var failure =
+                assertRejectedBeforeCommit(
+                        () -> service.activate(admin, document(original), 1, () -> {}));
+        assertThat(failure.getCause()).isSameAs(cause);
+    }
+
+    @Test
+    void unavailableWriterConnectionCannotHaveActivatedThePolicy() {
+        var cause = new CannotCreateTransactionException("private connection diagnostic");
+        when(writer.activate(anyString(), anyString(), anyLong(), anyString(), any()))
+                .thenThrow(cause);
+
+        var failure =
+                assertRejectedBeforeCommit(
+                        () -> service.activate(admin, document(original), 1, () -> {}));
+        assertThat(failure.getCause()).isSameAs(cause);
+    }
+
+    private void returnStored(String hash, String stored) {
+        when(writer.activate(anyString(), anyString(), anyLong(), anyString(), any()))
+                .thenAnswer(
+                        call -> {
+                            Function<JdbcPolicyWriter.Activation, PolicyManagementService.Active>
+                                    response = call.getArgument(4);
+                            return response.apply(new JdbcPolicyWriter.Activation(2, hash, stored));
+                        });
+    }
+
+    private ApiFailure assertRejectedBeforeCommit(Runnable activation) {
+        var failure = catchThrowableOfType(ApiFailure.class, activation::run);
+        assertThat(failure).isNotNull();
+        assertThat(failure.status()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(failure.code()).isEqualTo("DEPENDENCY_UNAVAILABLE");
+        assertThat(failure.outcome()).isEqualTo("NOT_ACCEPTED");
+        return failure;
     }
 
     private PolicyLoader.Document document(String text) {
