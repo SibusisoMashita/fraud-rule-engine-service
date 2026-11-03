@@ -502,6 +502,10 @@ class ProtectedIngressTest {
         docker.pauseContainerCmd(REDIS.getContainerId()).exec();
         try {
             assertStatus(
+                    call("POST", "/api/v1/transactions", "malformed-key", BODY),
+                    401,
+                    "INVALID_CREDENTIAL");
+            assertStatus(
                     call("POST", "/api/v1/transactions", identity.key(), BODY),
                     503,
                     "LIMITER_UNAVAILABLE");
@@ -513,6 +517,10 @@ class ProtectedIngressTest {
         var dbDocker = DATABASE.getDockerClient();
         dbDocker.pauseContainerCmd(DATABASE.getContainerId()).exec();
         try {
+            assertStatus(
+                    call("POST", "/api/v1/transactions", "malformed-key", BODY),
+                    401,
+                    "INVALID_CREDENTIAL");
             assertStatus(
                     call("POST", "/api/v1/transactions", identity.key(), BODY),
                     503,

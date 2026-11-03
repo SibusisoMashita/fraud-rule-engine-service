@@ -27,9 +27,7 @@ public final class CredentialAuthenticator {
     }
 
     public Caller authenticate(String key) {
-        if (key == null || !CREDENTIAL_PATTERN.matcher(key).matches()) {
-            throw new ApiFailure(HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_CREDENTIAL);
-        }
+        validateFormat(key);
         int separator = key.indexOf('.');
         var credential = store.active(key.substring(0, separator));
         byte[] expected =
@@ -41,6 +39,12 @@ public final class CredentialAuthenticator {
             throw new ApiFailure(HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_CREDENTIAL);
         }
         return credential.orElseThrow().caller();
+    }
+
+    public static void validateFormat(String key) {
+        if (key == null || !CREDENTIAL_PATTERN.matcher(key).matches()) {
+            throw new ApiFailure(HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_CREDENTIAL);
+        }
     }
 
     public static byte[] digest(String value) {

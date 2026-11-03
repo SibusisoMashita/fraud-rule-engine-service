@@ -19,7 +19,6 @@ import za.co.sibusiso.fraud.ingress.error.ApiProblems;
 import za.co.sibusiso.fraud.ingress.request.RequestDeadline;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Semaphore;
 
@@ -62,6 +61,17 @@ public final class IngressFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
             return;
         }
+        String key;
+        try {
+            var headers = request.getHeaders(API_KEY_HEADER);
+            key = headers.hasMoreElements() ? headers.nextElement() : null;
+            if (headers.hasMoreElements())
+                throw new ApiFailure(HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_CREDENTIAL);
+            CredentialAuthenticator.validateFormat(key);
+        } catch (ApiFailure failure) {
+            ApiProblems.write(request, response, failure);
+            return;
+        }
         if (!admission.tryAcquire()) {
             ApiProblems.write(
                     request,
@@ -76,10 +86,7 @@ public final class IngressFilter extends OncePerRequestFilter {
             try {
                 var deadline = new RequestDeadline(limits.api().businessDeadlineMillis());
                 request.setAttribute(RequestDeadline.ATTRIBUTE, deadline);
-                var headers = Collections.list(request.getHeaders(API_KEY_HEADER));
-                if (headers.size() != 1)
-                    throw new ApiFailure(HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_CREDENTIAL);
-                Caller caller = authenticator.authenticate(headers.getFirst());
+                Caller caller = authenticator.authenticate(key);
                 deadline.check();
                 if (!caller.roles().contains(route.role()))
                     throw new ApiFailure(HttpStatus.FORBIDDEN, ErrorCode.FORBIDDEN);

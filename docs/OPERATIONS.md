@@ -169,7 +169,7 @@ The ordinary local seed uses `local-demo` with INGEST, READ and POLICY, both ver
 
 | Boundary | Current behaviour |
 | --- | --- |
-| Credentials | Missing, malformed, duplicate, expired, revoked or unknown key: 401 and `WWW-Authenticate: ApiKey` |
+| Credentials | Missing, malformed or duplicate key headers: 401 before admission. Other invalid credentials: 401 after admission. Both include `WWW-Authenticate: ApiKey`. Well-formed keys remain subject to the capacity limit. |
 | Authorization | Wrong route role or unpermitted physical source: 403; client scope/proxy headers grant no permissions |
 | Input | Unsupported or duplicate media/encoding headers: 415; excess body: 413; malformed/duplicate/deep JSON or invalid shape: 400; invalid static domain facts: 422 |
 | Quota | Stable principal/route bucket shared by replicas and rotated keys; exhaustion: 429 with `Retry-After` |
