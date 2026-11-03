@@ -164,9 +164,15 @@ These figures apply to this workload and environment. They do not establish maxi
 
 [GitHub Actions](../.github/workflows/verify.yaml) runs the helper and Java suites, formatting and coverage checks, Docker build/smoke, the load-balancer/autoscaling checks, recovery and legacy migration. Pushes to `main`, `fix/terry-feedback` and `fix/review-follow-up`, and pull requests, trigger verification. Manual workflow dispatch can also run the full capacity suite or the separate latency comparison. A separate job runs the source, dependency, deployment-image, fault-proxy and secret scans. There is no standalone SAST engine.
 
-CI retains HTML/XML coverage reports for 14 days, including when a coverage gate fails. It also keeps operational/scaling results and bounded failure logs, with generated test credentials redacted. It does not upload raw scanner secret findings. Operational reports identify the commit or artifact digest, dependency versions, fixture/policy hashes, environment, UTC time and outcome. Clean-clone runtime checks are recorded separately from CI build success.
+CI retains HTML/XML coverage reports for 14 days when Java verification ran, including when a coverage gate fails. It also keeps operational/scaling results and bounded failure logs, with generated test credentials redacted. The security job retains an allowlisted summary of component status, vulnerability metadata and secret counts; it does not upload raw scanner secret findings. Operational reports identify the commit or artifact digest, dependency versions, fixture/policy hashes, environment, UTC time and outcome. Clean-clone runtime checks are recorded separately from CI build success.
 
 ## Release checks
+
+### CI repair verification on 2026-11-03
+
+A local candidate based on `db19251` passed 473 Java tests, 61 helper tests, formatting and coverage gates, and the Docker build and full smoke suite. The 16 latency transport tests also passed in a constrained Linux container, including five repeated runs. Exact-response checks use controlled arrivals; the separate real-generator tests still verify scheduling and dropped requests.
+
+All seven security scans passed with no HIGH/CRITICAL vulnerabilities or secret findings, using Trivy 0.76.0 and its 2026-11-03 database. All 75 packaged libraries matched the SBOM by SHA-256. The runtime image contains the patched Brotli package described in [Operations](OPERATIONS.md#security-verification). Checks used a separate candidate image and disposable data. These are local results; they do not change the failed published CI run or qualify the unresolved latency comparison below.
 
 ### Review verification on 2026-11-03
 

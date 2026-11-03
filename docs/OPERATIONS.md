@@ -310,11 +310,13 @@ Maven generates a CycloneDX runtime dependency inventory under `target/sbom/`, o
 TRIVY_BIN=/path/to/trivy ./scripts/security-check.sh
 ```
 
+The default application image is `fraud-rule-engine-service:local`. Set `APP_IMAGE` to an already-built candidate tag to scan it separately; the resolved immutable image ID is recorded. Each component prints its result, vulnerability metadata and secret count. CI retains only `target/security/summary.json`; raw reports and secret matches stay local. Missing reports and scanner errors fail the gate.
+
 The filesystem scan uses `--offline-scan` for dependency identification so a cold CI Maven cache cannot trigger remote POM resolution or Maven Central rate limiting. The hash-verified packaged CycloneDX inventory remains authoritative for complete runtime dependency coverage; vulnerability-database updates remain enabled. See [Trivy Maven troubleshooting](https://github.com/aquasecurity/trivy/blob/main/docs/guide/references/troubleshooting.md).
 
 The pinned scanner checks source/dependencies/secrets, the exact packaged CycloneDX inventory and the built image OS/secrets. Tomcat 11.0.27 and Jackson 3.1.7 explicitly patch the older Boot-managed baseline; keep these overrides until a compatible managed release includes the fixes. [Tomcat advisories](https://tomcat.apache.org/security-11.html) and [Jackson patch notes](https://github.com/FasterXML/jackson/wiki/Jackson-Release-3.1.7) describe the upstream fixes.
 
-The runtime image also pins the [Ubuntu curl fix](https://ubuntu.com/security/CVE-2026-92392) until the pinned Temurin base incorporates it.
+The runtime image also pins the [Ubuntu curl fix](https://ubuntu.com/security/CVE-2026-92392) and [Brotli fix](https://ubuntu.com/security/CVE-2026-111497) until the pinned Temurin base incorporates them.
 
 Findings and scanner/database identity remain in ignored `target/security/`. HIGH/CRITICAL findings or scanner errors fail the command; no blanket ignore list or `--ignore-unfixed` suppression is used. Review findings for applicability and remediate before release.
 

@@ -32,9 +32,10 @@ jobs:
       - name: Verify operational helpers
         run: python3 -B -m unittest discover -s scripts/verification -p 'test_*.py'
       - name: Build and integration tests
+        id: java
         run: ./mvnw -B -ntp verify
       - name: Retain Java coverage
-        if: always()
+        if: ${{ !cancelled() && (steps.java.outcome == 'success' || steps.java.outcome == 'failure') }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: java-coverage
@@ -106,3 +107,11 @@ jobs:
         env:
           TRIVY_BIN: ./target/tools/trivy
         run: ./scripts/security-check.sh
+      - name: Retain safe security summary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-summary
+          path: target/security/summary.json
+          if-no-files-found: ignore
+          retention-days: 14

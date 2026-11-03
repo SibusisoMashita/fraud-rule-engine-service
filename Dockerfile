@@ -13,9 +13,10 @@ COPY api api
 RUN ./mvnw -B -ntp -Dmaven.test.skip=true package
 
 FROM eclipse-temurin:21-jre@sha256:ccbad9e7cb84c27092b12c40a4143e5733e050db9c3784d84f632dcf423fb2ef
-# Remove after the pinned Temurin base includes the Ubuntu curl security fix.
+# Remove after the pinned Temurin base includes the Ubuntu curl and Brotli fixes.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl=8.18.0-1ubuntu2.8 libcurl4t64=8.18.0-1ubuntu2.8 \
+    libbrotli1=1.2.0-3ubuntu0.1 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /build/target/fraud-rule-engine-service-*.jar /app/service.jar

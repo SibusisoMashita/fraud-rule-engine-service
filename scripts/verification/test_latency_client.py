@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from latency_client import measure, payload, quantiles
-from load import run
+from load import run, summarize
 
 
 class RecordingServer(ThreadingHTTPServer):
@@ -24,6 +24,7 @@ class RecordingServer(ThreadingHTTPServer):
 
     def get_request(self):
         result = super().get_request()
+        result[0].setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         with self.guard:
             self.connections += 1
         return result
@@ -94,10 +95,26 @@ def job(server, **changes):
             'expectedRuleCount': 2, 'slowRequestMillis': 100, **changes}
 
 
+def measure_completed(settings):
+    """Measure real HTTP exchanges without making transport assertions depend on arrival deadlines."""
+    def complete_each_request(request, rate, seconds, _workers, _max_lag_ms, **options):
+        assert options['with_schedule']
+        samples = []
+        for index in range(round(rate * seconds)):
+            scheduled = time.monotonic()
+            response = request(index, scheduled)
+            samples.append({**response, 'latencyMillis': (time.monotonic() - scheduled) * 1000})
+        return {**summarize(samples, len(samples), seconds, 0), 'samples': samples}
+
+    # Scheduling, worker ownership and generator-drop tests keep using the real load.run.
+    with patch('latency_client.load.run', side_effect=complete_each_request):
+        return measure(settings)
+
+
 class LatencyTransportTest(unittest.TestCase):
     def test_real_keepalive_reuses_one_connection_and_marks_only_the_first_request(self):
         with serving() as server:
-            result = measure(job(server))
+            result = measure_completed(job(server))
             self.assertEqual(server.connections, 1)
             self.assertEqual(len(server.requests), 4)
         self.assertEqual(result['summary']['connectionOpens'], 1)
@@ -138,7 +155,7 @@ class LatencyTransportTest(unittest.TestCase):
 
     def test_fresh_mode_really_opens_one_tcp_connection_per_request(self):
         with serving() as server:
-            result = measure(job(server, connectionMode='fresh'))
+            result = measure_completed(job(server, connectionMode='fresh'))
             self.assertEqual(server.connections, 4)
         self.assertEqual(result['summary']['connectionOpens'], 4)
         self.assertTrue(all(row['firstRequestOnConnection'] for row in result['samples']))
@@ -147,7 +164,7 @@ class LatencyTransportTest(unittest.TestCase):
 
     def test_server_close_is_measured_as_a_new_connection_without_retrying(self):
         with serving(close=True) as server:
-            result = measure(job(server))
+            result = measure_completed(job(server))
             self.assertEqual(server.connections, 4)
         self.assertTrue(all(row['firstRequestOnConnection'] for row in result['samples']))
         self.assertTrue(all(row['ttfbMillis'] is not None for row in result['samples']))
@@ -155,8 +172,11 @@ class LatencyTransportTest(unittest.TestCase):
 
     def test_read_workload_uses_get_and_records_denials_with_all_request_timings(self):
         with serving(status=429, delay=.015) as server:
-            result = measure(job(server, workload='read', slowRequestMillis=1))
+            result = measure_completed(job(server, workload='read', slowRequestMillis=1))
+            self.assertEqual(len(server.requests), 4)
             self.assertTrue(all(request[0] == 'GET' and not request[2] for request in server.requests))
+        self.assertEqual(result['summary']['dropped'], 0)
+        self.assertEqual(result['summary']['transportErrors'], {})
         self.assertEqual(result['summary']['denied'], 4)
         self.assertEqual(result['summary']['slowRequests'], 4)
         self.assertEqual(result['summary']['statuses'], {'429': 4})
@@ -165,11 +185,11 @@ class LatencyTransportTest(unittest.TestCase):
 
     def test_read_workload_checks_the_configured_populated_page_size(self):
         with serving() as server:
-            result = measure(job(server, workload='read'))
+            result = measure_completed(job(server, workload='read'))
             self.assertTrue(all(request[1] == '/api/v1/evaluations?pageSize=20' for request in server.requests))
         self.assertEqual(result['summary']['validationErrors'], {})
         with serving(items=0) as server:
-            result = measure(job(server, workload='read'))
+            result = measure_completed(job(server, workload='read'))
         self.assertEqual(result['summary']['validationErrors'], {'INVALID_READ_RESPONSE': 4})
 
     def test_timeout_does_not_retry_or_replace_the_uncertain_write(self):
@@ -187,7 +207,7 @@ class LatencyTransportTest(unittest.TestCase):
 
     def test_failed_success_validation_is_reported_without_response_contents(self):
         with serving(hash='different-policy') as server:
-            result = measure(job(server))
+            result = measure_completed(job(server))
         self.assertEqual(result['summary']['validationErrors'], {'POLICY_HASH_MISMATCH': 4})
         self.assertNotIn('different-policy', json.dumps(result))
 
@@ -223,13 +243,14 @@ class LatencyTransportTest(unittest.TestCase):
 
     def test_cli_output_contains_neither_job_secrets_nor_echoed_response_bodies(self):
         with serving(echo=True) as server:
-            settings = job(server)
+            settings = job(server, ratePerSecond=100, durationSeconds=.01)
             settings['event']['category'] = 'private-payload-value'
             completed = subprocess.run([sys.executable, str(Path(__file__).with_name('latency_client.py'))],
                                        input=json.dumps(settings), capture_output=True, text=True, timeout=5)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         result = json.loads(completed.stdout)
-        self.assertEqual(result['summary']['validationErrors'], {'INVALID_SUCCESS_RESPONSE': 4})
+        self.assertEqual(result['summary']['sent'], 1)
+        self.assertEqual(result['summary']['validationErrors'], {'INVALID_SUCCESS_RESPONSE': 1})
         for secret in settings['keys'] + ['private-payload-value']:
             self.assertNotIn(secret, completed.stdout + completed.stderr)
         self.assertEqual(completed.stderr, '')
