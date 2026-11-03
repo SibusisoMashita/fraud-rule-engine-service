@@ -193,7 +193,7 @@ The legacy migration drill starts the last pinned Debian database on its own vol
 
 ### Load balancing and local autoscaling
 
-The proxy checks use one HAProxy entrypoint. They cover distribution, authentication/roles, forged forwarding headers, shared quotas, duplicates, live policy changes, failure/removal/recovery, alive-but-unready instances, no-ready rejection and body limits. Writes during drained scale-in keep complete results. Helpers check sustained demand, cooldown, missing readiness/metrics and connection budgets.
+The proxy checks use one HAProxy entrypoint. They cover distribution, authentication/roles, forged forwarding headers, shared quotas, duplicates, live policy changes, failure/removal/recovery, alive-but-unready instances, no-ready rejection and body limits. Redis and PostgreSQL outages must return safe structured 503s without persisting the rejected event. A separate fixture distinguishes pre-dispatch rejection from uncertain connection failure, checks correlation IDs and disabled retries, and preserves application 503 replies. Writes during drained scale-in keep complete results. Helpers check sustained demand, cooldown, missing readiness/metrics and connection budgets.
 
 The final extended demo completed 240 authenticated reads at eight/second with no drops or denials, used both backends and automatically scaled **one → two → one**. Neither application replicas nor the database published host ports. An unavailable-Docker check also confirmed credential cleanup after a partial startup failure. Reports stay under `target/scaling/`. The benchmark above uses direct application ports; this demo does not measure load-balanced maximum capacity or managed production autoscaling. See [Scaling](SCALING.md).
 

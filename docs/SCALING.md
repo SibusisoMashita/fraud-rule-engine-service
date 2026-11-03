@@ -27,6 +27,15 @@ The [proxy configuration](../docker/haproxy.cfg) defines round-robin routing, co
 
 Automatic upstream retries are disabled: a lost response may follow a committed payment. Callers retrieve or replay the same event ID and payload.
 
+The proxy uses two structured `503` responses with `application/problem+json`, a generated correlation ID, `Cache-Control: no-store` and a one-second `Retry-After` hint:
+
+| Code | Outcome | Meaning |
+| --- | --- | --- |
+| `NO_READY_BACKEND` | `NOT_ACCEPTED` | This attempt was rejected before selecting an app instance. |
+| `BACKEND_UNAVAILABLE` | `UNKNOWN` | HAProxy could not confirm the request outcome; an app may have received it. |
+
+These codes describe routing, without guessing which dependency failed. An earlier uncertain attempt may still have committed, even if a later attempt gets `NO_READY_BACKEND`. Preserve the event ID and payload for recovery. The retry hint does not trigger an automatic write retry. Application errors keep their original bodies, codes and correlation IDs; other proxy errors such as 502 and 504 retain HAProxy's own representation. The configuration uses [native HAProxy error handling](https://docs.haproxy.org/3.2/configuration.html#http-error).
+
 For a persistent two-instance setup, first build the image and initialize secrets as described in the [README](../README.md). Then run:
 
 ```sh
@@ -79,5 +88,7 @@ python3 -B scripts/demo-scaling.py --verify
 ```
 
 They cover routing, auth/roles, shared quotas, duplicate safety, live policy on both instances, unavailable and unready backends, no-ready 503s, recovery, body bounds and writes during drained scale-in. The automatic demo then checks actual scale-out, scale-in and traffic on both backends. Failed checks stay failed in the report. [Testing](TESTING.md) records results and limits; [Operations](OPERATIONS.md#operational-verification) covers the wider operational checks. The earlier direct-instance benchmark does not establish maximum throughput through HAProxy.
+
+The error checks stop Redis and PostgreSQL separately, verify the structured rejection and confirm that its event was never stored after recovery. An isolated proxy fixture covers connection failure while a backend still appears usable, no automatic retries, private-input protection and unchanged application 503 replies. Use `--app-image <image>` to verify an already-built candidate without replacing the local demo tag.
 
 The Docker controller is demo tooling with host Docker access. Managed production autoscaling remains [stage 12](DELIVERY_PLAN.md#future-autoscaling-change): select a platform, secure metrics, provide host capacity, handle failures and measure targets. For example, [Kubernetes HPA](https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/) adjusts Deployments using resource/custom metrics; CPU utilization needs resource requests and a metrics provider. The local demo does not qualify a Kubernetes or cloud deployment.

@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'verification'))
 from balancing import BalancedStack, ScalingDecision, settings
 from load import run
+from proxy_errors import check_problem, run as verify_proxy_errors
 from recovery import block_evaluations, event, invariant_counts, wait_for
 from stack import ROOT, check, command
 
@@ -38,6 +39,7 @@ def probe(stack, path='/api/v1/evaluations', payload=None, principal=0, authenti
 
 
 def verify(stack, record):
+    verify_proxy_errors(stack, record)
     stack.scale(stack.scaling['maxReplicas'])
     routes = set()
     for i in range(stack.settings['principals'] * 3):
@@ -103,17 +105,27 @@ def verify(stack, record):
     finally:
         command(['docker', 'unpause', victim])
     stack.wait_ready(len(before))
-    stack.compose('stop', 'redis')
-    try:
-        stack.wait_ready(0)
-        began = time.monotonic()
-        check(probe(stack)[0] == 503 and time.monotonic() - began < stack.settings['faultBoundSeconds'], 'No-ready-backend did not close ingress within bound')
-        live = stack.compose('exec', '-T', 'app', 'curl', '--fail', '--silent', 'http://localhost:8080/health/live')
-        check(json.loads(live)['status'] == 'UP', 'Test did not distinguish liveness/readiness')
-    finally:
-        stack.compose('start', 'redis')
-    stack.wait_ready(len(before))
-    record('readiness-recovery', {'unavailableRemoved': True, 'aliveButUnreadyExcluded': True, 'noReadyStatus': 503})
+    outages = {}
+    for dependency in ('redis', 'db'):
+        counts = invariant_counts(stack)
+        rejected = event(stack.settings, 'proxy-unavailable-' + dependency)
+        stack.compose('stop', dependency)
+        try:
+            stack.wait_ready(0)
+            began = time.monotonic()
+            problem = check_problem(probe(stack, '/api/v1/transactions', rejected), 'NO_READY_BACKEND', 'NOT_ACCEPTED')
+            check(time.monotonic() - began < stack.settings['faultBoundSeconds'], 'No-ready-backend did not close ingress within bound')
+            live = stack.compose('exec', '-T', 'app', 'curl', '--fail', '--silent', 'http://localhost:8080/health/live')
+            check(json.loads(live)['status'] == 'UP', 'Test did not distinguish liveness/readiness')
+        finally:
+            stack.compose('start', dependency)
+        stack.wait_ready(len(before))
+        check(invariant_counts(stack) == counts, 'Rejected outage request changed financial records')
+        check(stack.sql("SELECT count(*) FROM fraud.transactions WHERE event_id='" + rejected['eventId'] + "'") == '0', 'No-ready request was persisted')
+        check(probe(stack)[0] == 200, 'Proxied access did not recover after dependency restart')
+        outages[dependency] = {'code': problem['code'], 'outcome': problem['outcome'], 'rejectedEventAbsent': True}
+    check(before == sorted(stack.replicas()), 'Dependency recovery replaced applications')
+    record('readiness-recovery', {'unavailableRemoved': True, 'aliveButUnreadyExcluded': True, 'noReadyStatus': 503, 'dependencyOutages': outages})
     check(probe(stack, '/api/v1/evaluations', payload={'padding': 'x' * int(re.search(r'maxBodyBytes: (\d+)', (ROOT / 'config/service.example.yaml').read_text()).group(1))})[0] == 413, 'Proxy body bound not enforced')
     import http.client
     from urllib.parse import urlsplit
@@ -221,6 +233,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--verify', action='store_true', help='Also exercise authorization, quotas, duplicates, policy, failures and draining')
     parser.add_argument('--config', type=Path, default=ROOT / 'config/scaling-demo.example.json')
+    parser.add_argument('--app-image', help='Use an already-built image without changing the local demo tag')
     args = parser.parse_args()
     os.chdir(ROOT)
     v = settings(args.config)
@@ -237,7 +250,7 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     try:
-        stack = BalancedStack(output, verification, v)
+        stack = BalancedStack(output, verification, v, args.app_image)
         stack.start()
         print('Docker project: ' + stack.project + '\nSingle entrypoint: ' + stack.base_cached['app'] + '\nWatch app replicas in Docker Desktop. Ctrl-C cleans up this project.', flush=True)
         report['environment'] = stack.manifest()

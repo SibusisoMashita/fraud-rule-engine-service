@@ -342,6 +342,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Health'
+        '503':
+          $ref: '#/components/responses/Problem503'
   /health/ready:
     get:
       operationId: readiness
@@ -356,11 +358,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/Health'
         '503':
-          description: Not ready
+          description: Not ready. The optional proxy can reject the request before it reaches an app and return a structured routing problem instead.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Health'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
     ApiKey:
@@ -1083,7 +1088,12 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Problem503:
-      description: Dependency, admission or deadline failure; outcome can be unknown
+      description: >-
+        Dependency, admission or deadline failure; outcome can be unknown.
+        With the optional HAProxy overlay, NO_READY_BACKEND / NOT_ACCEPTED means
+        this attempt was rejected before dispatch. BACKEND_UNAVAILABLE / UNKNOWN
+        means the proxy could not confirm its outcome. Neither proxy code identifies
+        a particular failed dependency. Application errors pass through unchanged.
       headers:
         Cache-Control:
           $ref: '#/components/headers/CacheControl'
