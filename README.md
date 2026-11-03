@@ -6,7 +6,7 @@
 
 A Java service that checks card purchases and ATM withdrawals against five configurable fraud rules. It stores each evaluation and explains which rules flagged the transaction. Business settings live in PostgreSQL and can change without restarting the service.
 
-The rules cover high amounts, transaction velocity, cumulative spend, impossible travel, and small payments followed by a large payment. The service accepts **BOOKED outgoing transactions** and flags potential fraud; it does not authorize payments. Examples use synthetic data and illustrative thresholds.
+The rules cover high amounts, transaction velocity, cumulative spend, impossible travel, and small payments followed by a large payment. The service accepts **BOOKED outgoing transactions** and returns advisory decisions. It does not authorize or block payments, or create review cases. Examples use synthetic data and illustrative thresholds. See [service guarantees and limits](docs/ARCHITECTURE.md#service-scope-and-guarantees) before integrating it.
 
 Built with Java 21, Spring Boot, PostgreSQL and Redis. Optional HAProxy ingress supports the local scaling demo. The CI badge shows the published `main` branch; [Testing](docs/TESTING.md) records local results and limits.
 

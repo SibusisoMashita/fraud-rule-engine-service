@@ -26,6 +26,8 @@ JaCoCo 0.8.15 measures all production code. Verification requires at least **95%
 ./mvnw -B -ntp clean verify
 ```
 
+Archive any reports you need before `clean`, which removes `target/`, including operational and latency results.
+
 To check the built Docker image and the complete local lifecycle:
 
 ```sh
@@ -166,6 +168,32 @@ CI retains HTML/XML coverage reports for 14 days, including when a coverage gate
 
 ## Release checks
 
+### Review verification on 2026-11-03
+
+These are local results for the `fix/review-follow-up` candidate based on `bef5693`, including the latency harness, policy-response, credential-admission and proxy-error changes. They are not a published CI result. JDK 21 and Docker Desktop on macOS were used; Windows/WSL2 and Rancher Desktop were not tested.
+
+| Check | Observed result |
+| --- | --- |
+| Java verification | 473 tests; no failures, errors or skips; formatting and coverage gates passed |
+| Operational helpers | 49 tests passed |
+| Docker build and full smoke suite | Passed, including all five rules, live policy, replay and query access across two apps |
+| Optional policy administration | Two-instance revision guards, concurrent edits, unchanged activation and immutable replay passed; response-read failures rolled back in real-database tests |
+| Proxy and dependency recovery | Redis and PostgreSQL outages rejected new writes without storing them; recovery, both proxy 503 outcomes and unchanged application errors passed |
+| Local automatic scaling | One → two → one replicas; 240 successful authenticated reads across both backends, no drops or denials, no financial-invariant failures |
+
+Coverage includes all production code:
+
+| Scope | Line coverage | Branch coverage |
+| --- | --- | --- |
+| Whole application | 97.26% (2,445/2,514) | 86.24% (790/916) |
+| Rules package | 99.67% (304/305) | 96.23% (102/106) |
+
+The latency investigation remains open. The full default comparison did not pass: earlier attempts recorded generator drops and Redis timeout failures, and the long comparison stopped at case 38. The external 20–31 second stalls have no established cause, and the reviewer's load scripts and raw results were unavailable. Earlier local raw samples were removed by Maven `clean`; only their aggregate notes remain. They cannot substitute for retained raw evidence.
+
+Separate, regenerated diagnostics retained all samples: a 48-case, two-second read/write sweep completed 1,280 requests, and a focused four-app read comparison completed 16 twenty-second cases and 6,400 requests. Both had no drops or denials. These reduced configurations check the harness and compare recorded conditions; they do not qualify the default workload, resolve the reported stalls or replace the historical capacity benchmark.
+
+Dedicated recovery/restore, legacy upgrade, fresh-clone and security qualification were not rerun for this candidate. The older dated results below remain historical evidence; a past clean scan does not establish the current vulnerability status. The unchanged UI was not requalified against this backend candidate, and its pinned CI applies only to the revision recorded in its contract metadata.
+
 ### Review verification on 2026-10-23
 
 Using JDK 21 and Docker Desktop on macOS, `clean verify` passed **458 Java tests** with no failures, errors or skips; the operational helper suite passed **17 tests**. Coverage includes all production code:
@@ -195,7 +223,7 @@ The legacy migration drill starts the last pinned Debian database on its own vol
 
 The proxy checks use one HAProxy entrypoint. They cover distribution, authentication/roles, forged forwarding headers, shared quotas, duplicates, live policy changes, failure/removal/recovery, alive-but-unready instances, no-ready rejection and body limits. Redis and PostgreSQL outages must return safe structured 503s without persisting the rejected event. A separate fixture distinguishes pre-dispatch rejection from uncertain connection failure, checks correlation IDs and disabled retries, and preserves application 503 replies. Writes during drained scale-in keep complete results. Helpers check sustained demand, cooldown, missing readiness/metrics and connection budgets.
 
-The final extended demo completed 240 authenticated reads at eight/second with no drops or denials, used both backends and automatically scaled **one → two → one**. Neither application replicas nor the database published host ports. An unavailable-Docker check also confirmed credential cleanup after a partial startup failure. Reports stay under `target/scaling/`. The benchmark above uses direct application ports; this demo does not measure load-balanced maximum capacity or managed production autoscaling. See [Scaling](SCALING.md).
+The 2026-11-03 run above used the configured eight reads/second workload. Neither application replicas nor the database published host ports. An unavailable-Docker check also confirmed credential cleanup after a partial startup failure. Reports stay under `target/scaling/`. The benchmark above uses direct application ports; this demo does not measure load-balanced maximum capacity or managed production autoscaling. See [Scaling](SCALING.md).
 
 ## Before a real-data deployment
 

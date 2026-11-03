@@ -2,6 +2,12 @@
 
 The service is a Java modular monolith backed by PostgreSQL and Redis. All five rules, protected ingestion, evaluation queries, live policy inspection and the Docker scaling demo are implemented. [Testing](TESTING.md) records the checks and remaining deployment limits. See [Operations](OPERATIONS.md) for runtime commands, [Rules](RULES.md) for fraud logic and [OpenAPI](../api/openapi.yaml) for the HTTP contract.
 
+## Service scope and guarantees
+
+A successful transaction response means a booked debit observation and its evaluation are stored. `FLAGGED` and `INDETERMINATE` describe evidence; they do not reject a payment or create a review case. The calling system owns follow-up, customer communication and any payment controls. `CLEAR` means no applicable rule matched, not that the payment is proven safe. [Rules](RULES.md#result-algebra) defines decisions and coverage, including missing evidence.
+
+Detection uses one customer's observed history within a scope. Physical travel compares the same instrument; online purchases receive no physical-travel check. Failed or declined attempts, beneficiary/device/IP intelligence and coordinated activity across customers are outside this version's input and rules. These limits need additional signals and explicit contracts before widening the detection scope.
+
 ## Design trade-offs
 
 | Choice | Benefit and limit |
@@ -9,8 +15,9 @@ The service is a Java modular monolith backed by PostgreSQL and Redis. All five 
 | [One database transaction and customer lock](#how-an-evaluation-is-saved) | Complete writes and ordered customer history; one busy customer remains serial. |
 | [Live policy selected once per evaluation](#live-policy-and-stable-identities) | No restart for business changes and one coherent decision; unavailable or incompatible policy rejects new evaluations. |
 | [Immutable, as-observed history](#loading-history) | Saved evidence explains what the engine knew; delayed events do not rewrite earlier decisions. |
-| [Cursor pagination](#queries-and-policy-inspection) | Bounded reads over changing data; traversal is not a snapshot and reconciliation needs ID lookups. |
+| [Cursor pagination](#queries-and-policy-inspection) | Bounded browsing over changing data; late commits can be missed, so listing is not a durable review queue or reconciliation feed. |
 | [Shared PostgreSQL and Redis](#scaling-and-future-alternatives) | App replicas share decisions, policy and quotas; more replicas do not remove database or hot-customer limits. |
+| [Database permissions and audit records](#data-ownership-and-representation) | Runtime cannot rewrite stored decisions; a privileged database owner can, and records have no cryptographic tamper evidence. |
 
 ## Application boundaries
 
@@ -68,7 +75,7 @@ Database-owned customer/acceptance-time fields on evaluations are derived from t
 
 Versioned HMAC-SHA256 cursors bind scope, normalized explicit filters, page size, resolved dates and the last key. A dedicated startup signing secret is shared across replicas. Signature verification precedes decoding. Cursors are readable, grant no authority and require fresh authentication and READ quota on every page. Default dates use the database clock on the first page only.
 
-Pagination is a live traversal, not a snapshot: each page opens a new read transaction, and a late commit behind the last key can be missed. Reconciliation uses producer manifests and scoped ID lookups after outstanding work settles.
+Pagination is a live traversal, not a snapshot: each page opens a new read transaction, and a late commit behind the last key can be missed for the rest of that traversal. A fresh traversal can find it. Reconciliation uses producer manifests and scoped ID lookups after outstanding work settles; a reliable review queue or export would need a separate delivery/acknowledgement contract.
 
 Policy inspection uses the same live provider as ingestion. It returns one captured hash and typed rule settings, including disabled rules, under POLICY permission and a separate quota. It excludes secrets, source YAML and infrastructure settings. Reading policy cannot activate it or change stored evaluations. Retrospective re-evaluation and export are deferred.
 
@@ -79,6 +86,8 @@ The administrator API is disabled by default. When enabled, a separate global `P
 The adapter reuses the policy loader and rule-engine verification. Validation is read-only. Activation requires a strong revision ETag through `If-Match`; the database compares that revision while holding the head-row lock. Another activation returns 412, including an A → B → A change. An unchanged policy preserves its revision. The existing CLI and HTTP activation share the same atomic version, pointer and audit update.
 
 HTTP activation reads and verifies the stored document on the writer connection before committing, preserving its original representation for equivalent policies. It returns success only after commit; read or verification failures roll back, while an unacknowledged commit remains an unknown outcome.
+
+One authorised administrator can activate a complete policy immediately. There is no second-approver workflow, scheduled effective date or automatic historical re-evaluation. Revision guards prevent stale edits; they do not provide approval governance.
 
 A dedicated adapter-owned writer pool authenticates as `fraud_policy_api`; enabling it does not replace the runtime datasource or widen its grants. This role can read policy and call only conditional activation, with no table writes, schema changes or CLI activation permission. Audit retains the database actor and records the authenticated API principal. Requests cannot nominate that actor. An uncertain activation response requires reading current revision/hash before deciding what to do; the server does not retry writes automatically.
 

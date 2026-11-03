@@ -96,6 +96,8 @@ Rule statuses are `MATCH`, `NO_MATCH`, `NOT_APPLICABLE`, `INSUFFICIENT_DATA` and
 
 Any match flags the event. Without a match, missing evidence makes the decision indeterminate. Otherwise it is clear: no applicable evaluated rule matched, which does not prove absence of fraud. Coverage is partial exactly when an enabled rule has insufficient data. `NOT_APPLICABLE` is a completed applicability check; disabled rules do not participate. All-disabled policy is invalid. Complete evidence does not prove complete upstream delivery.
 
+A first transaction is not automatically indeterminate. Velocity counts the current event, cumulative spend includes its amount, and a nonlarge payment needs no small-payment history. With the sample policy and no matches elsewhere, a physical purchase missing location or a prior travel reference is `INDETERMINATE / PARTIAL`; an online purchase can be `CLEAR / COMPLETE` because travel is `NOT_APPLICABLE`. These decisions record signals only; [the calling system owns follow-up](ARCHITECTURE.md#service-scope-and-guarantees).
+
 Unexpected rule errors return 500 and roll back; transient dependency/context failures return 503. Neither saves a normal partial evaluation. One pure aggregation function implements the table. New events use the captured active policy; identical retries return the original result. A future severity model would need defined combination/missing-data semantics, calibration and API compatibility review.
 
 ## Adding a rule
