@@ -11,6 +11,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'verification'))
 import benchmark
+import latency
 import recovery
 import seed
 import upgrade
@@ -19,8 +20,10 @@ from stack import ROOT, Stack, check, command
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--suite', choices=('recovery', 'capacity', 'upgrade', 'all'), default='all')
+    parser.add_argument('--suite', choices=('recovery', 'capacity', 'upgrade', 'latency', 'all'), default='all')
     parser.add_argument('--config', type=Path, default=ROOT / 'config/verification.example.json')
+    parser.add_argument('--latency-config', type=Path, default=ROOT / 'config/latency.example.json')
+    parser.add_argument('--app-image', help='Use an already-built application image without changing the local demo tag')
     args = parser.parse_args()
     os.chdir(ROOT)
     settings = json.loads(args.config.read_text())
@@ -29,6 +32,10 @@ def main():
     check(all(type(value) is int and value > 0 for key, value in settings.items() if key != 'event' and key != 'maxUnexpectedErrorFraction'),
           'Workload settings must be positive integers')
     check(0 < settings['maxUnexpectedErrorFraction'] < 1, 'Invalid error fraction')
+    latency_values = latency.settings(args.latency_config) if args.suite == 'latency' else None
+    if latency_values:
+        settings.update({key: latency_values[key] for key in ('principals', 'requestTimeoutSeconds',
+                         'applicationConnectionBudget', 'rolloutSurge')})
     if args.suite == 'upgrade':
         settings['event']['category'] = 'CAFÉ / 日本'
     endpoint = os.environ.get('DOCKER_HOST') or command(['docker', 'context', 'inspect', '--format', '{{.Endpoints.docker.Host}}']).decode().strip()
@@ -39,6 +46,10 @@ def main():
     print('Operational evidence: ' + str(output), flush=True)
     report = {'suite': args.suite, 'settings': settings, 'settingsSha256': hashlib.sha256(args.config.read_bytes()).hexdigest(),
               'standardWorkload': settings == reference, 'checks': {}, 'passed': False}
+    if latency_values:
+        report.update(latencySettings=latency_values,
+                      latencySettingsSha256=hashlib.sha256(args.latency_config.read_bytes()).hexdigest(),
+                      standardWorkload=latency_values == json.loads((ROOT / 'config/latency.example.json').read_text()))
     stack = None
 
     def save():
@@ -54,19 +65,28 @@ def main():
 
     signal.signal(signal.SIGTERM, terminate)
     try:
-        stack = Stack(output, settings)
+        stack = (latency.LatencyStack(output, settings, latency_values, args.app_image) if latency_values else
+                 Stack(output, settings, args.app_image))
         if args.suite == 'upgrade':
             upgrade.configure_source(stack)
         stack.start()
         if args.suite == 'upgrade':
             upgrade.verify_guard(stack, record)
         report['environment'] = stack.manifest()
+        if latency_values:
+            report['environment'].update(
+                dockerContext=command(['docker', 'context', 'show']).decode().strip(),
+                dockerEndpoint=endpoint,
+                clientImage=stack.client_image,
+                proxyConfigurationSha256=hashlib.sha256((ROOT / 'docker/haproxy.cfg').read_bytes()).hexdigest())
         save()
         if args.suite in ('recovery', 'upgrade', 'all'):
             recovery.run(stack, record)
         if args.suite in ('capacity', 'all'):
             record('seed', seed.run(stack))
             benchmark.run(stack, record)
+        if latency_values:
+            latency.run(stack, latency_values, record)
         report['passed'] = True
     except BaseException as failure:
         report['failure'] = {'type': type(failure).__name__, 'message': str(failure)}

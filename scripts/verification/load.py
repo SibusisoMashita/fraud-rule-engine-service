@@ -4,6 +4,7 @@ import math
 import threading
 import time
 from collections import Counter
+from contextlib import ExitStack
 
 
 def percentile(values, fraction):
@@ -24,31 +25,49 @@ def summarize(samples, offered, duration, dropped):
             'successfulP99Millis': percentile(success, .99)}
 
 
-def run(request, rate, seconds, workers, max_lag_ms, progress=None):
+def run(request, rate, seconds, workers, max_lag_ms, progress=None, *,
+        include_samples=False, with_schedule=False, preallocate_workers=False,
+        fixed_workers=False):
     count = round(rate * seconds)
     samples, futures = [], []
-    slots = threading.BoundedSemaphore(workers)
     dropped = 0
-    start = time.monotonic()
-
-    def invoke(index, scheduled):
+    def invoke(index, scheduled, slot):
         try:
-            result = request(index)
+            result = request(index, scheduled) if with_schedule else request(index)
             return {**result, 'latencyMillis': (time.monotonic() - scheduled) * 1000}
         finally:
-            slots.release()
+            slot.release()
 
     # No executor backlog: a full generator drops an arrival and reports it.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+    with ExitStack() as resources:
+        if fixed_workers:
+            # Every logical client owns one thread and one in-flight slot.
+            executors = [resources.enter_context(concurrent.futures.ThreadPoolExecutor(max_workers=1))
+                         for _ in range(workers)]
+            slots = [threading.BoundedSemaphore(1) for _ in range(workers)]
+        else:
+            executors = [resources.enter_context(concurrent.futures.ThreadPoolExecutor(max_workers=workers))]
+            slots = [threading.BoundedSemaphore(workers)]
+        if preallocate_workers:
+            # Exclude lazy thread creation from the offered arrival window.
+            ready = threading.Barrier(workers + 1)
+            starters = [executors[index if fixed_workers else 0].submit(ready.wait)
+                        for index in range(workers)]
+            ready.wait()
+            for starter in starters:
+                starter.result()
+        start = time.monotonic()
         for index in range(count):
+            worker = index % workers if fixed_workers else 0
+            slot = slots[worker]
             scheduled = start + index / rate
             delay = scheduled - time.monotonic()
             if delay > 0:
                 time.sleep(delay)
-            if (time.monotonic() - scheduled) * 1000 > max_lag_ms or not slots.acquire(False):
+            if (time.monotonic() - scheduled) * 1000 > max_lag_ms or not slot.acquire(False):
                 dropped += 1
                 continue
-            futures.append(executor.submit(invoke, index, scheduled))
+            futures.append(executors[worker].submit(invoke, index, scheduled, slot))
             if progress and index % max(1, round(rate * 30)) == 0:
                 progress(index, count)
         for future in futures:
@@ -61,6 +80,8 @@ def run(request, rate, seconds, workers, max_lag_ms, progress=None):
     elapsed = time.monotonic() - start
     result.update(observedSeconds=elapsed, drainSeconds=max(0, elapsed - seconds),
                   successfulRequestsPerSecond=sum(row['status'] in (200, 201) for row in samples) / elapsed)
+    if include_samples:
+        result['samples'] = samples
     return result
 
 

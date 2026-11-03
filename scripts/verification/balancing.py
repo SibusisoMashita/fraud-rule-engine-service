@@ -28,8 +28,8 @@ def settings(path=ROOT / 'config/scaling-demo.example.json'):
 
 
 class BalancedStack(Stack):
-    def __init__(self, output, verification, scaling):
-        super().__init__(output, verification)
+    def __init__(self, output, verification, scaling, app_image=None):
+        super().__init__(output, verification, app_image)
         self.scaling = scaling
         overlay = json.loads(command(['docker', 'compose', '-f', 'compose.yaml', '-f', 'compose.balanced.yaml', 'config', '--format', 'json']))
         proxy = overlay['services']['load-balancer']

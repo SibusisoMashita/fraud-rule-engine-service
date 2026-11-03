@@ -1,0 +1,22 @@
+{
+  "repetitions": 3,
+  "durationSeconds": 20,
+  "readRequestsPerSecond": 20,
+  "writeRequestsPerSecond": 40,
+  "workers": 10,
+  "principals": 32,
+  "readPageSize": 20,
+  "seedEvents": 40,
+  "replicas": [1, 4],
+  "origins": ["host", "container"],
+  "connections": ["fresh", "reuse"],
+  "workloads": ["read"],
+  "preallocateWorkers": false,
+  "requestTimeoutSeconds": 45,
+  "connectTimeoutSeconds": 5,
+  "maxGeneratorLagMillis": 100,
+  "slowRequestMillis": 10000,
+  "applicationConnectionBudget": 50,
+  "rolloutSurge": 1,
+  "seed": 20261102
+}

@@ -1,12 +1,16 @@
 name: Verify service
 on:
   push:
-    branches: [main, fix/terry-feedback]
+    branches: [main, fix/terry-feedback, fix/review-follow-up]
   pull_request:
   workflow_dispatch:
     inputs:
       capacity:
         description: Run the full measured capacity suite
+        type: boolean
+        default: false
+      latency:
+        description: Run the isolated direct/proxy latency comparison
         type: boolean
         default: false
 permissions:
@@ -61,6 +65,27 @@ jobs:
             target/scaling/**/results.json
             target/scaling/**/*failure.log
           if-no-files-found: ignore
+          retention-days: 14
+  latency:
+    if: github.event_name == 'workflow_dispatch' && inputs.latency
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Build application image
+        run: docker compose build app
+      - name: Compare direct and balanced request latency
+        run: python3 -B scripts/verify-operations.py --suite latency
+      - name: Retain latency evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: latency-evidence
+          path: |
+            target/operations/**/results.json
+            target/operations/**/latency-*.json
+            target/operations/**/*failure.log
+          if-no-files-found: error
           retention-days: 14
   security:
     runs-on: ubuntu-24.04

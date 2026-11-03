@@ -47,6 +47,23 @@ python3 -B -m unittest discover -s scripts/verification -p 'test_*.py'
 
 For recovery, restore, migration and capacity commands, see [Operational verification](OPERATIONS.md#operational-verification). [Security verification](OPERATIONS.md#security-verification) covers the source, dependency and image scans. The [scaling guide](SCALING.md) covers the through-proxy checks and automatic scaling demo. Generated reports belong under ignored `target/`, outside Git history.
 
+## Compare direct and balanced latency
+
+Use the diagnostic suite to investigate slow requests independently of the capacity qualification. It creates its own Docker project, credentials, database and random loopback ports. An optional image argument lets you leave the running demo's image tag untouched:
+
+```sh
+docker build --tag fraud-rule-engine-service:review-latency .
+python3 -B scripts/verify-operations.py --suite latency --app-image fraud-rule-engine-service:review-latency
+```
+
+The [default workload](../config/latency.example.json) seeds synthetic transactions through the API, then makes three 20-second read runs per condition at 20 requests/second using populated 20-item evaluation pages: direct or HAProxy routing, one or four apps, host or container client, and fresh or reused HTTP connections. Allow about 20 minutes including setup. Ten fixed clients own their threads and connections; a busy client's next arrival is dropped and reported instead of queued. Applications are warmed separately; every measured client's first request stays in the evidence. The same standard-library client runs in both locations, with Python versions and the container image recorded. Container startup is outside HTTP timing. A deterministic seed varies case order within each replica count. This is a controlled comparison, not an exact reproduction of an external load generator.
+
+Results under `target/operations/` include the source revision/tree hash, image IDs, policy hash, configuration, status/drop counts, p50/p95/p99/p99.9/maximum latency, connection counts and per-request phases. End-to-end latency includes client JSON validation; `responseMillis` stops when the HTTP body completes, and `validationMillis` measures validation separately. Credentials, request bodies and response bodies are excluded. The diagnostic timeout is longer than the API deadline so a client-side connection stall remains visible. DNS resolution is synchronous; its duration is measured, but socket timeouts cannot interrupt the platform resolver. A slow request fails its configured threshold even when p95 is good. Successful runs establish only that the reported stall was not reproduced under those recorded conditions.
+
+For a focused comparison, copy the workload to an ignored location and pass `--latency-config path/to/file.json`. Keep all settings; narrow `replicas`, `origins` or `connections`, select `distinct` or `hot` write workloads, or set `preallocateWorkers` to compare prestarted workers against lazy creation. Write cases use independent principals in one synthetic scope so a hot customer really shares one history. Quotas remain unchanged; configured rates above their aggregate refill are rejected. Writes are never automatically retried. Each case reconciles acknowledged event IDs and complete records; successful write cases also check retrieval and identical replay. A failed or uncertain request stops subsequent cases and retains the evidence. Generator drops and slow observations remain failed measurements while the other comparisons continue at the same configured rate; either makes the suite exit unsuccessfully after recording its conclusion.
+
+The latency suite is opt-in and separate from `--suite all`. In GitHub Actions, select **Run the isolated direct/proxy latency comparison** when running the workflow manually. Its raw samples are retained with the summary. Short diagnostic runs are not a soak test or a production capacity claim.
+
 ## Use Postman
 
 Start the service using the [quickstart](../README.md#quickstart), then import these two files into Postman:
@@ -143,7 +160,7 @@ These figures apply to this workload and environment. They do not establish maxi
 
 ## CI and reports
 
-[GitHub Actions](../.github/workflows/verify.yaml) runs the helper and Java suites, formatting and coverage checks, Docker build/smoke, the load-balancer/autoscaling checks, recovery and legacy migration. Pushes to `main` and `fix/terry-feedback`, and pull requests, trigger verification. Manual workflow dispatch can also run the full capacity suite. A separate job runs the source, dependency, deployment-image, fault-proxy and secret scans. There is no standalone SAST engine.
+[GitHub Actions](../.github/workflows/verify.yaml) runs the helper and Java suites, formatting and coverage checks, Docker build/smoke, the load-balancer/autoscaling checks, recovery and legacy migration. Pushes to `main`, `fix/terry-feedback` and `fix/review-follow-up`, and pull requests, trigger verification. Manual workflow dispatch can also run the full capacity suite or the separate latency comparison. A separate job runs the source, dependency, deployment-image, fault-proxy and secret scans. There is no standalone SAST engine.
 
 CI retains HTML/XML coverage reports for 14 days, including when a coverage gate fails. It also keeps operational/scaling results and bounded failure logs, with generated test credentials redacted. It does not upload raw scanner secret findings. Operational reports identify the commit or artifact digest, dependency versions, fixture/policy hashes, environment, UTC time and outcome. Clean-clone runtime checks are recorded separately from CI build success.
 

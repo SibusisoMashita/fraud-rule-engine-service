@@ -29,7 +29,7 @@ def check(condition, message):
 
 
 class Stack:
-    def __init__(self, output, settings):
+    def __init__(self, output, settings, app_image=None):
         self.output, self.settings = output, settings
         self.project = 'fraud-ops-' + secrets.token_hex(6)
         self.file = output / 'compose.json'
@@ -66,7 +66,7 @@ class Stack:
         restored_app.pop('depends_on', None)
         restored_app['environment']['DATABASE_URL'] = 'jdbc:postgresql://restore-db:5432/fraud?currentSchema=fraud'
         # Resolve the local tag once; every process must run the same reviewed artifact.
-        image = json.loads(command(['docker', 'image', 'inspect', base['services']['app']['image']]))[0]
+        image = json.loads(command(['docker', 'image', 'inspect', app_image or base['services']['app']['image']]))[0]
         self.image = image['Id']
         for service in base['services'].values():
             if service.get('image') == base['services']['app']['image'] or 'build' in service:
@@ -130,13 +130,15 @@ class Stack:
         self.ready()
         self.provision()
 
-    def provision(self):
+    def provision(self, shared_scope=None):
+        check(shared_scope is None or shared_scope == 'latency', 'Unsupported diagnostic scope')
         statements = []
         for index in range(self.settings['principals']):
             secret = secrets.token_hex(32)
             self.keys.append(f'ops-{index}.{secret}')
             digest = hashlib.sha256(secret.encode()).hexdigest()
-            statements += [f"INSERT INTO fraud.api_principals(principal_id,scope,enabled,roles,location_sources) VALUES ('ops-{index}','ops-{index}',true,ARRAY['INGEST','READ','POLICY'],ARRAY['VERIFIED_CARD_PRESENT_TERMINAL']);",
+            scope = shared_scope or f'ops-{index}'
+            statements += [f"INSERT INTO fraud.api_principals(principal_id,scope,enabled,roles,location_sources) VALUES ('ops-{index}','{scope}',true,ARRAY['INGEST','READ','POLICY'],ARRAY['VERIFIED_CARD_PRESENT_TERMINAL']);",
                 f"INSERT INTO fraud.api_credentials(key_id,principal_id,secret_hash,valid_from,expires_at) VALUES ('ops-{index}','ops-{index}','{digest}',clock_timestamp(),clock_timestamp()+interval '1 day');"]
         self.sql('\n'.join(statements))
         status, body, _ = self.request('/api/v1/rules')
